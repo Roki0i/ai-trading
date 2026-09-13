@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "research": {
+    "market": "JP",
+    "frequency": "daily",
+    "position": "long_only_cash",
+    "rebalance": "weekly",
+    "leverage": 1,
+    "timezone": "Asia/Tokyo"
+  },
+  "storage": {
+    "raw": "../data/raw",
+    "processed": "../data/processed",
+    "experiments": "../experiments"
+  },
+  "provider": {
+    "name": "jquants_v2",
+    "mode": "fixture",
+    "fixture": "../tests/fixtures/daily_pages.json",
+    "api_key_env": "JQUANTS_API_KEY"
+  },
+  "pit": {
+    "mode": "observed",
+    "boundary": "strict_before"
+  },
+  "dataset": {
+    "name": "daily_bars",
+    "date": "2025-01-06"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "synthetic": true,
+  "pages": [
+    {
+      "path": "/equities/bars/daily",
+      "params": {"date": "2025-01-06"},
+      "ingested_at": "2025-01-07T00:00:00+09:00",
+      "response": {
+        "data": [{"Date": "2025-01-06", "Code": "90001", "O": 100, "H": 110, "L": 95, "C": 105, "Vo": 10000, "AdjFactor": 1}],
+        "pagination_key": "page-2"
+      }
+    },
+    {
+      "path": "/equities/bars/daily",
+      "params": {"date": "2025-01-06", "pagination_key": "page-2"},
+      "ingested_at": "2025-01-07T00:00:01+09:00",
+      "response": {
+        "data": [{"Date": "2025-01-06", "Code": "90002", "O": 200, "H": 220, "L": 195, "C": 210, "Vo": 20000, "AdjFactor": 1}]
+      }
+    }
+  ]
+}
