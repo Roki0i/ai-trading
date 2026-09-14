@@ -1,0 +1,313 @@
+{
+  "synthetic": true,
+  "pages": [
+    {
+      "receipt": {
+        "ingested_at": "2025-01-06T17:00:00+09:00",
+        "body_sha256": "synthetic-fixture-only"
+      },
+      "rows": [
+        {
+          "Date": "2025-01-06",
+          "Code": "A",
+          "O": 100,
+          "H": 100,
+          "L": 100,
+          "C": 100,
+          "Vo": 100000,
+          "AdjFactor": 1
+        },
+        {
+          "Date": "2025-01-06",
+          "Code": "B",
+          "O": 200,
+          "H": 200,
+          "L": 200,
+          "C": 200,
+          "Vo": 100000,
+          "AdjFactor": 1
+        }
+      ]
+    },
+    {
+      "receipt": {
+        "ingested_at": "2025-01-07T17:00:00+09:00",
+        "body_sha256": "synthetic-fixture-only"
+      },
+      "rows": [
+        {
+          "Date": "2025-01-07",
+          "Code": "A",
+          "O": 103,
+          "H": 103,
+          "L": 103,
+          "C": 103,
+          "Vo": 100000,
+          "AdjFactor": 1
+        },
+        {
+          "Date": "2025-01-07",
+          "Code": "B",
+          "O": 198,
+          "H": 198,
+          "L": 198,
+          "C": 198,
+          "Vo": 100000,
+          "AdjFactor": 1
+        }
+      ]
+    },
+    {
+      "receipt": {
+        "ingested_at": "2025-01-08T17:00:00+09:00",
+        "body_sha256": "synthetic-fixture-only"
+      },
+      "rows": [
+        {
+          "Date": "2025-01-08",
+          "Code": "A",
+          "O": 106,
+          "H": 106,
+          "L": 106,
+          "C": 106,
+          "Vo": 100000,
+          "AdjFactor": 1
+        },
+        {
+          "Date": "2025-01-08",
+          "Code": "B",
+          "O": 196,
+          "H": 196,
+          "L": 196,
+          "C": 196,
+          "Vo": 100000,
+          "AdjFactor": 1
+        }
+      ]
+    },
+    {
+      "receipt": {
+        "ingested_at": "2025-01-09T17:00:00+09:00",
+        "body_sha256": "synthetic-fixture-only"
+      },
+      "rows": [
+        {
+          "Date": "2025-01-09",
+          "Code": "A",
+          "O": 109,
+          "H": 109,
+          "L": 109,
+          "C": 109,
+          "Vo": 100000,
+          "AdjFactor": 1
+        },
+        {
+          "Date": "2025-01-09",
+          "Code": "B",
+          "O": 194,
+          "H": 194,
+          "L": 194,
+          "C": 194,
+          "Vo": 100000,
+          "AdjFactor": 1
+        }
+      ]
+    },
+    {
+      "receipt": {
+        "ingested_at": "2025-01-10T17:00:00+09:00",
+        "body_sha256": "synthetic-fixture-only"
+      },
+      "rows": [
+        {
+          "Date": "2025-01-10",
+          "Code": "A",
+          "O": 112,
+          "H": 112,
+          "L": 112,
+          "C": 112,
+          "Vo": 100000,
+          "AdjFactor": 1
+        },
+        {
+          "Date": "2025-01-10",
+          "Code": "B",
+          "O": 192,
+          "H": 192,
+          "L": 192,
+          "C": 192,
+          "Vo": 100000,
+          "AdjFactor": 1
+        }
+      ]
+    },
+    {
+      "receipt": {
+        "ingested_at": "2025-01-14T17:00:00+09:00",
+        "body_sha256": "synthetic-fixture-only"
+      },
+      "rows": [
+        {
+          "Date": "2025-01-14",
+          "Code": "A",
+          "O": 115,
+          "H": 115,
+          "L": 115,
+          "C": 115,
+          "Vo": 100000,
+          "AdjFactor": 1
+        },
+        {
+          "Date": "2025-01-14",
+          "Code": "B",
+          "O": 190,
+          "H": 190,
+          "L": 190,
+          "C": 190,
+          "Vo": 100000,
+          "AdjFactor": 1
+        }
+      ]
+    },
+    {
+      "receipt": {
+        "ingested_at": "2025-01-15T17:00:00+09:00",
+        "body_sha256": "synthetic-fixture-only"
+      },
+      "rows": [
+        {
+          "Date": "2025-01-15",
+          "Code": "A",
+          "O": 118,
+          "H": 118,
+          "L": 118,
+          "C": 118,
+          "Vo": 100000,
+          "AdjFactor": 1
+        },
+        {
+          "Date": "2025-01-15",
+          "Code": "B",
+          "O": 188,
+          "H": 188,
+          "L": 188,
+          "C": 188,
+          "Vo": 100000,
+          "AdjFactor": 1
+        }
+      ]
+    },
+    {
+      "receipt": {
+        "ingested_at": "2025-01-16T17:00:00+09:00",
+        "body_sha256": "synthetic-fixture-only"
+      },
+      "rows": [
+        {
+          "Date": "2025-01-16",
+          "Code": "A",
+          "O": 121,
+          "H": 121,
+          "L": 121,
+          "C": 121,
+          "Vo": 100000,
+          "AdjFactor": 1
+        },
+        {
+          "Date": "2025-01-16",
+          "Code": "B",
+          "O": 186,
+          "H": 186,
+          "L": 186,
+          "C": 186,
+          "Vo": 100000,
+          "AdjFactor": 1
+        }
+      ]
+    },
+    {
+      "receipt": {
+        "ingested_at": "2025-01-17T17:00:00+09:00",
+        "body_sha256": "synthetic-fixture-only"
+      },
+      "rows": [
+        {
+          "Date": "2025-01-17",
+          "Code": "A",
+          "O": 124,
+          "H": 124,
+          "L": 124,
+          "C": 124,
+          "Vo": 100000,
+          "AdjFactor": 1
+        },
+        {
+          "Date": "2025-01-17",
+          "Code": "B",
+          "O": 184,
+          "H": 184,
+          "L": 184,
+          "C": 184,
+          "Vo": 100000,
+          "AdjFactor": 1
+        }
+      ]
+    },
+    {
+      "receipt": {
+        "ingested_at": "2025-01-20T17:00:00+09:00",
+        "body_sha256": "synthetic-fixture-only"
+      },
+      "rows": [
+        {
+          "Date": "2025-01-20",
+          "Code": "A",
+          "O": 127,
+          "H": 127,
+          "L": 127,
+          "C": 127,
+          "Vo": 100000,
+          "AdjFactor": 1
+        },
+        {
+          "Date": "2025-01-20",
+          "Code": "B",
+          "O": 182,
+          "H": 182,
+          "L": 182,
+          "C": 182,
+          "Vo": 100000,
+          "AdjFactor": 1
+        }
+      ]
+    },
+    {
+      "receipt": {
+        "ingested_at": "2025-01-21T17:00:00+09:00",
+        "body_sha256": "synthetic-fixture-only"
+      },
+      "rows": [
+        {
+          "Date": "2025-01-21",
+          "Code": "A",
+          "O": 130,
+          "H": 130,
+          "L": 130,
+          "C": 130,
+          "Vo": 100000,
+          "AdjFactor": 1
+        },
+        {
+          "Date": "2025-01-21",
+          "Code": "B",
+          "O": 180,
+          "H": 180,
+          "L": 180,
+          "C": 180,
+          "Vo": 100000,
+          "AdjFactor": 1
+        }
+      ]
+    }
+  ]
+}

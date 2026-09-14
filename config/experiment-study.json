@@ -1,0 +1,13 @@
+{
+  "periods": {
+    "development": {"start": "2025-01-06", "end": "2025-01-21"},
+    "validation": {"start": "2025-02-01", "end": "2025-02-28"},
+    "holdout": {"start": "2025-03-01", "end": "2025-03-31"}
+  },
+  "universe_definition": {
+    "type": "static_point_in_time",
+    "symbols": ["fixture:A", "fixture:B"],
+    "known_at": "2025-01-01T00:00:00Z",
+    "evidence": "Synthetic A/B universe declared before development; tests/fixtures/backtest_pages.json. Not historical listing evidence."
+  }
+}

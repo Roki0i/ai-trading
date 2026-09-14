@@ -1,10 +1,11 @@
 # AI Trading Research
 
-日本株の研究・分析基盤。現在はPhase 0〜1（研究仕様・データ取得・PIT・品質検査）のみ。
-予測モデル、LLM、バックテスト、実売買は未実装。
+日本株の研究・分析基盤。Phase 0〜1（研究仕様・データ取得・PIT・品質検査）とPhase 2（非AIバックテスト）を実装。
+予測モデル、LLM、ニュース分析、実売買は未実装。
 
 - [固定した研究仕様](docs/research-spec.md)
 - [設定・データ構造・PIT・取得層の設計と制約](docs/data-architecture.md)
+- [Phase 2の戦略・執行・指標・再現手順と制約](docs/backtest.md)
 - [既定設定](config/research.json)
 
 ## APIキーなしで実行
@@ -38,3 +39,13 @@ APIキーは `JQUANTS_API_KEY` 環境変数で渡す。設定ファイルやGit�
 取得時点が不明な過去データを、過去に利用可能だったと推測して扱わない。
 公表時刻不明の日足は `published_at=null`、`available_at=ingested_at`。
 過去のバックテスト用に使うには別途、当時の版・配信時刻と銘柄履歴の根拠が必要。
+
+## Phase 3: 再現可能な実験基盤
+
+固定したdevelopment / validation / holdoutと時点別universeの下で、3基準戦略の実験・保存・比較・再検証を行います。通常の開発コマンドはholdout結果へのアクセスを拒否します。
+
+```sh
+PYTHONPATH=src python3 -m ai_trading.experiment --help
+```
+
+[実験モデル、CLI、fixture比較例、保証範囲と制約](docs/experiments.md)を参照してください。
