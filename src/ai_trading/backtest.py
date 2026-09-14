@@ -37,6 +37,7 @@ class BacktestConfig:
     top_n: int = 5
     pit_mode: str = "observed"
     knowledge_at: Optional[str] = None
+    ml: Optional[dict] = None
 
     def __post_init__(self):
         object.__setattr__(self, "sessions", tuple(self.sessions))
@@ -50,8 +51,13 @@ class BacktestConfig:
             raise ValueError("unique nonempty universe required")
         if any(not isinstance(s, str) or not s.strip() for s in self.universe):
             raise ValueError("invalid universe")
-        if self.strategy not in ("buy_and_hold", "equal_weight", "momentum"):
+        if self.strategy not in ("buy_and_hold", "equal_weight", "momentum", "ml"):
             raise ValueError("unknown strategy")
+        if self.strategy == "ml" and self.ml is None:
+            raise ValueError("ml configuration required")
+        if self.ml is not None:
+            from .ml import MLConfig
+            object.__setattr__(self, "ml", json.loads(canonical(asdict(MLConfig(**self.ml)))))
         for name in ("lot_size", "lookback", "top_n"):
             if type(getattr(self, name)) is not int or getattr(self, name) <= 0:
                 raise ValueError(name + " must be a positive integer")
@@ -95,17 +101,29 @@ def _bars(rows, cutoff, config):
 def run_backtest(rows, config):
     # Keep financial arithmetic independent of the caller's Decimal context.
     with localcontext(Context(prec=28)):
-        return _run(list(rows), config)
+        rows = list(rows)
+        if config.ml is None:
+            return _run(rows, config)
+        from .ml import MLConfig, walk_forward
+        cfg = MLConfig(**config.ml)
+        research = walk_forward(rows, config, cfg)
+        signals = {}
+        for p in research['predictions']:
+            if p['probability'] >= 0.5:
+                signals.setdefault(p['session'], []).append(p['symbol'])
+        result = _run(rows, config, signals, cfg.first_prediction)
+        result['ml_research'] = research
+        return result
 
 
-def _run(rows, config):
+def _run(rows, config, signals=None, evaluation_start=0):
     cash = decimal(config.initial_cash)
     positions, marks, orders, fills, snapshots = {}, {}, [], [], []
     rate = decimal(config.commission_bps) / 10000
     fixed = decimal(config.commission_fixed)
     slip = decimal(config.slippage_bps) / 10000
     previous_week, bought = None, False
-    for session in config.sessions:
+    for session in config.sessions[evaluation_start:]:
         cutoff = timestamp(session + "T18:00:00+09:00")
         bars = _bars(rows, cutoff, config)
         current = {s: b for (s, d), b in bars.items() if d == session}
@@ -172,7 +190,11 @@ def _run(rows, config):
             if config.strategy == "momentum" and any(p is None for p in prices):
                 continue
             histories[symbol] = [decimal(p) for p in prices if p is not None]
-        weights = target_weights(config.strategy, histories, config.universe, config.lookback, config.top_n)
+        if config.strategy == 'ml':
+            eligible = [s for s in signals.get(session, []) if s in histories]
+            weights = {s: Decimal(1)/len(eligible) for s in eligible}
+        else:
+            weights = target_weights(config.strategy, histories, config.universe, config.lookback, config.top_n)
         for symbol in sorted(set(weights) | set(positions)):
             target = int(equity * weights[symbol] / marks[symbol][0] / config.lot_size) * config.lot_size if symbol in weights else 0
             difference = target - positions.get(symbol, 0)

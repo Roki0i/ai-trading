@@ -1,7 +1,7 @@
 # AI Trading Research
 
 日本株の研究・分析基盤。Phase 0〜1（研究仕様・データ取得・PIT・品質検査）とPhase 2（非AIバックテスト）を実装。
-予測モデル、LLM、ニュース分析、実売買は未実装。
+Phase 4では固定価格特徴量によるロジスティック回帰の比較実験を実装。LLM、ニュース分析、実売買は未実装。
 
 - [固定した研究仕様](docs/research-spec.md)
 - [設定・データ構造・PIT・取得層の設計と制約](docs/data-architecture.md)
@@ -49,3 +49,14 @@ PYTHONPATH=src python3 -m ai_trading.experiment --help
 ```
 
 [実験モデル、CLI、fixture比較例、保証範囲と制約](docs/experiments.md)を参照してください。
+
+## Phase 4: AI/ML比較実験
+
+PIT特徴量、train限定scaler、purge付きwalk-forward、4戦略の同条件比較を外部依存なしで実行できます。
+
+```sh
+PYTHONPATH=src python3 -m ai_trading.ml_fixture --store experiments/phase4-fixture
+```
+
+これは架空データによる動作検証です。収益率はAI性能の証拠にはなりません。
+[設計、保存内容、リーク対策と残る課題](docs/ml-experiments.md)を参照してください。

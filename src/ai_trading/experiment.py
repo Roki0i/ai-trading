@@ -129,6 +129,9 @@ def prepare(rows, config, study, split):
 def outcome(records, raw_config, study, split):
     try:
         config = BacktestConfig(**raw_config)
+        if config.ml is not None:
+            if split == 'holdout':
+                raise ValueError('ML model selection cannot access holdout')
         rows = prepare(decode_rows(records), config, study, split)
         result = run_backtest(rows, config)
         # Ledger links every execution to the decision and subsequent account state.
@@ -153,6 +156,11 @@ class ExperimentStore:
         if type(random_seed) is not int:
             raise ValueError("integer seed required")
         raw = asdict(config) if isinstance(config, BacktestConfig) else dict(config)
+        if raw.get('ml') is not None:
+            if split == 'holdout':
+                raise PermissionError('ML model selection cannot access holdout')
+            if raw['ml'].get('seed', 0) != random_seed:
+                raise ValueError('ML seed must equal experiment random_seed')
         # Even failed attempts must never archive another split's data.
         period = self.study["periods"][split]
         start = timestamp(period["start"] + "T00:00:00+09:00")
@@ -174,7 +182,7 @@ class ExperimentStore:
         result = out["result"] or {}
         eid = uuid4().hex
         model = Experiment(eid, datetime.now(timezone.utc).isoformat(), raw.get("strategy", "equal_weight"),
-                           {k: raw.get(k) for k in ("lookback", "top_n")}, self.study["universe_definition"],
+                           {k: raw.get(k) for k in ("lookback", "top_n", "ml")}, self.study["universe_definition"],
                            dict(split=split, **self.study["periods"][split]), raw.get("initial_cash", "1000000"),
                            {k: raw.get(k, "0") for k in ("commission_bps", "commission_fixed")},
                            dict(slippage_bps=raw.get("slippage_bps", "0")), digest(canonical(records)),
