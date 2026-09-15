@@ -39,6 +39,8 @@ class BacktestConfig:
     knowledge_at: Optional[str] = None
     ml: Optional[dict] = None
     market: Optional[dict] = None
+    volume_participation: Optional[str] = None
+    execution_statuses: tuple = ()
 
     def __post_init__(self):
         object.__setattr__(self, "sessions", tuple(self.sessions))
@@ -69,6 +71,20 @@ class BacktestConfig:
             object.__setattr__(self, name, str(value))
         if decimal(self.slippage_bps) >= 10000 or decimal(self.commission_bps) >= 10000:
             raise ValueError("basis-point costs must be below 10000")
+        object.__setattr__(self, 'execution_statuses', tuple(self.execution_statuses))
+        for item in self.execution_statuses:
+            from .execution import delisting_policy
+            if item['symbol'] not in self.universe:
+                raise ValueError('execution status outside universe')
+            date.fromisoformat(item['effective_date'])
+            if timestamp(item['available_at']) > timestamp(item['ingested_at']):
+                raise ValueError('status ingestion before availability')
+            delisting_policy(item['status'], evidence=item.get('evidence'))
+        if self.volume_participation is not None:
+            v = decimal(self.volume_participation)
+            if not 0 < v <= 1:
+                raise ValueError('volume participation must be in (0, 1]')
+            object.__setattr__(self, 'volume_participation', str(v))
         if self.pit_mode not in ("observed", "historical"):
             raise ValueError("unknown PIT mode")
         if self.pit_mode == "historical" and self.knowledge_at is None:
@@ -133,6 +149,7 @@ def run_backtest(rows, config):
 def _run(rows, config, signals=None, evaluation_start=0):
     cash = decimal(config.initial_cash)
     positions, marks, orders, fills, snapshots = {}, {}, [], [], []
+    decisions = []
     rate = decimal(config.commission_bps) / 10000
     fixed = decimal(config.commission_fixed)
     slip = decimal(config.slippage_bps) / 10000
@@ -143,6 +160,17 @@ def _run(rows, config, signals=None, evaluation_start=0):
         cutoff = timestamp(session + "T18:00:00+09:00")
         eligible_universe = membership(config, session, cutoff)
         bars = _bars(rows, cutoff, config)
+        from .execution import delisting_policy
+        statuses = {}
+        for item in sorted(config.execution_statuses, key=lambda r: (r['effective_date'], timestamp(r['available_at']))):
+            if item['effective_date'] <= session and max(timestamp(item['available_at']),timestamp(item['ingested_at'])) < cutoff:
+                statuses[item['symbol']] = item
+        blocked = set()
+        for symbol, item in statuses.items():
+            policy = delisting_policy(item['status'], evidence=item.get('evidence'), held=bool(positions.get(symbol)))
+            if not policy['execution_allowed']:
+                blocked.add(symbol)
+        eligible_universe = tuple(s for s in eligible_universe if s not in blocked)
         current = {s: b for (s, d), b in bars.items() if d == session}
         if config.market is not None:
             # Entitlements belong to holders before the effective session's executions.
@@ -182,7 +210,10 @@ def _run(rows, config, signals=None, evaluation_start=0):
                         if o['symbol'] == symbol and o['status'] == 'pending':
                             o.update(status='cancelled', resolved_session=session, reason='corporate_action')
                 applied[key] = action.payload_json
-                events.append(dict(session=session, symbol=symbol, kind=p['kind'], quantity_before=q))
+                events.append(dict(session=session, symbol=symbol, kind=p['kind'], quantity_before=q,
+                                   quantity_after=positions.get(symbol, 0), raw_close=current.get(symbol, {}).get('close'),
+                                   previous_mark_multiplier=str(1/decimal(p['ratio'])) if 'ratio' in p else None,
+                                   vendor_adjusted_price_used=False))
             for r in list(receivables):
                 if r['payment_date'] <= session:
                     cash += r['amount']
@@ -192,7 +223,7 @@ def _run(rows, config, signals=None, evaluation_start=0):
                 p = json.loads(r.payload_json)
                 if p['delisting_date'] and p['delisting_date'] <= session and positions.get(r.entity_id):
                     raise ValueError('delisting with open position: explicit liquidation evidence required')
-            for symbol in eligible_universe:
+            for symbol in sorted(set(eligible_universe) | set(positions)):
                 b = current.get(symbol)
                 reason = ('api_gap' if b is None else 'missing_price' if b['close'] is None else
                           'missing_volume' if b['volume'] is None else 'trading_halt' if b['volume'] == 0 else None)
@@ -208,8 +239,11 @@ def _run(rows, config, signals=None, evaluation_start=0):
                     o.update(status='cancelled', resolved_session=session, reason='universe_exit')
         # Orders created at an earlier session can execute only on a new session.
         pending = [o for o in orders if o["status"] == "pending" and o["decision_session"] < session]
+        used_volume = {}
         for order in sorted(pending, key=lambda o: (o["side"] != "sell", o["symbol"])):
             symbol, side = order["symbol"], order["side"]
+            if symbol in blocked:
+                continue
             bar = current.get(symbol)
             if not bar or bar["close"] is None or not bar["volume"] or bar["volume"] <= 0:
                 continue
@@ -223,9 +257,19 @@ def _run(rows, config, signals=None, evaluation_start=0):
                 quantity = min(quantity, positions.get(symbol, 0))
                 if price * quantity * (1 - rate) < fixed:
                     quantity = 0
+            if config.volume_participation is not None:
+                from .execution import participation_quantity
+                quantity = participation_quantity(quantity, bar['volume'], config.volume_participation,
+                                                  config.lot_size, used_volume.get(symbol, 0))
+                if side == 'sell' and price * quantity * (1 - rate) < fixed:
+                    quantity = 0
+                if quantity == 0:
+                    order['last_no_fill'] = dict(session=session, reason='liquidity_or_cash_constraint')
+                    continue
             if quantity == 0:
                 order.update(status="rejected", resolved_session=session, reason="cash_or_fee_constraint")
                 continue
+            used_volume[symbol] = used_volume.get(symbol, 0) + quantity
             notional = price * quantity
             fee = notional * rate + fixed
             cash += notional - fee if side == "sell" else -notional - fee
@@ -234,6 +278,9 @@ def _run(rows, config, signals=None, evaluation_start=0):
                 del positions[symbol]
             order.update(status="filled" if quantity == order["quantity"] else "partial_cancelled",
                          resolved_session=session)
+            if config.volume_participation is not None:
+                order['unfilled_quantity'] = order['quantity'] - quantity
+                order['remainder_policy'] = 'cancel_after_partial_fill'
             fills.append(dict(order_id=order["id"], session=session, symbol=symbol, side=side,
                               quantity=quantity, reference_price=str(reference), price=str(price),
                               notional=str(notional), commission=str(fee),
@@ -282,6 +329,9 @@ def _run(rows, config, signals=None, evaluation_start=0):
             weights = {s: Decimal(1)/len(eligible) for s in eligible}
         else:
             weights = target_weights(config.strategy, histories, eligible_universe, config.lookback, config.top_n)
+        decisions.append(dict(session=session, decision_at=cutoff.isoformat(),
+                              target_weights={s: str(w) for s, w in weights.items()},
+                              histories={s: [str(p) for p in ps] for s, ps in histories.items()}))
         for symbol in sorted(set(weights) | set(positions)):
             target = int(equity * weights[symbol] / marks[symbol][0] / config.lot_size) * config.lot_size if symbol in weights else 0
             difference = target - positions.get(symbol, 0)
@@ -292,7 +342,7 @@ def _run(rows, config, signals=None, evaluation_start=0):
         if config.strategy == "buy_and_hold" and weights:
             bought = True
     result = dict(schema_version=1, config=asdict(config), orders=orders, fills=fills,
-                  snapshots=snapshots, metrics=performance(config.initial_cash, snapshots, fills))
+                  snapshots=snapshots, decisions=decisions, metrics=performance(config.initial_cash, snapshots, fills))
     if config.market is not None:
         from .market import provenance
         from .statistics import interval, returns

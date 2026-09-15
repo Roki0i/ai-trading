@@ -48,6 +48,8 @@ class JQuantsTransport:
     def get(self, path: str, params: dict) -> Response:
         if path not in ("/equities/bars/daily", "/markets/calendar", "/equities/master"):
             raise ValueError("endpoint not enabled for research")
+        if set(params) - {'date', 'code', 'from', 'to', 'pagination_key'}:
+            raise ValueError('unsupported query parameter')
         request = Request(self.BASE + path + "?" + urlencode(params),
                           headers={"x-api-key": self._api_key}, method="GET")
         try:
@@ -56,8 +58,10 @@ class JQuantsTransport:
         except HTTPError as exc:
             # Do not echo headers, response bodies or credentials into logs.
             raise RuntimeError("J-Quants HTTP status " + str(exc.code)) from None
-        except URLError:
+        except (URLError, TimeoutError):
             raise RuntimeError("J-Quants network request failed") from None
+        if self._api_key.encode() in body:
+            raise RuntimeError('J-Quants response rejected: credential reflection')
         return Response(body, datetime.now(timezone.utc))
 
 
@@ -99,6 +103,7 @@ def normalize_daily(pages: list[dict], source: str = "jquants_v2") -> list[Obser
         receipt = page["receipt"]
         ingested = timestamp(receipt["ingested_at"])
         for item in page["rows"]:
+            validate_daily_row(item)
             # No undocumented market-close or publication timestamps are fabricated.
             # event_at represents the session DATE at JST midnight, not availability.
             event = timestamp(item["Date"] + "T00:00:00+09:00")
@@ -206,3 +211,30 @@ def calendar_from_raw(bundle):
         raise ValueError('calendar response coverage incomplete')
     return TradingCalendar(version=digest(canonical(bundle)),source='jquants_v2:markets/calendar',
                            days=days,available_at=max(ingestions,key=timestamp))
+
+
+def validate_daily_row(item):
+    """Nullable/absent fields remain unavailable; malformed values fail explicitly."""
+    from datetime import date
+    import math
+    if not isinstance(item, dict) or not isinstance(item.get('Code'), str) or not item['Code']:
+        raise ValueError('daily Code required')
+    if date.fromisoformat(item['Date']).isoformat() != item['Date']:
+        raise ValueError('daily ISO Date required')
+    for key in ('O','H','L','C','Vo','AdjFactor','AdjO','AdjH','AdjL','AdjC','AdjVo'):
+        value = item.get(key)
+        if value is not None and (type(value) not in (int,float) or not math.isfinite(value)):
+            raise ValueError('invalid daily numeric field: ' + key)
+
+
+def merge_daily_bundles(*bundles):
+    """Retain prior receipts when collecting incremental forward observations."""
+    receipts, seen = [], set()
+    for bundle in bundles:
+        MarketDataProvider.regenerate(bundle)
+        for record in bundle['receipts']:
+            key = digest(canonical(record))
+            if key not in seen:
+                receipts.append(record)
+                seen.add(key)
+    return dict(schema_version=1,provider='jquants_v2',receipts=receipts)

@@ -70,3 +70,17 @@ PYTHONPATH=src python3 -m ai_trading.market_fixture --store experiments/phase5-v
 ```
 
 [設計・provenance・欠損/企業行動の処理・実市場で残る制約](docs/phase5-market-validation.md)
+
+## Phase 6: Real-market validation and frozen forward test
+
+出来高参加率、実データcoverage監査、設定freeze、append-only判断台帳、paper portfolio、再起動後の再生検証を追加しました。credentialのない環境ではfixtureを使用します。実API・実銘柄の完全性検証は未実施、holdoutは未開封です。
+
+```sh
+PYTHONPATH=src python3 -m ai_trading.validation --raw-root experiments/phase6-validation --sessions 2025-01-06 --symbols 90001 90002
+PYTHONPATH=src python3 -m ai_trading.forward_fixture --store experiments/phase6-demo
+PYTHONPATH=src python3 -m ai_trading.forward verify --root experiments/phase6-demo/fixture-forward
+```
+
+最初のコマンドの銘柄・日付はfixture専用です。credentialがある環境では実APIへ接続するため、契約範囲内の検証対象へ置き換えてください。demoは架空developmentデータの再生であり、未観測期間のForward成績ではありません。既存のfreeze先への再作成は拒否します。
+
+[Phase 6の実装・検証結果・運用手順・残る制約](docs/phase6-forward-test.md)
