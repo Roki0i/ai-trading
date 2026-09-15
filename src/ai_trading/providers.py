@@ -46,8 +46,8 @@ class JQuantsTransport:
             raise ValueError("JQUANTS_API_KEY is required for live mode")
 
     def get(self, path: str, params: dict) -> Response:
-        if path != "/equities/bars/daily":
-            raise ValueError("endpoint not enabled in Phase 1")
+        if path not in ("/equities/bars/daily", "/markets/calendar", "/equities/master"):
+            raise ValueError("endpoint not enabled for research")
         request = Request(self.BASE + path + "?" + urlencode(params),
                           headers={"x-api-key": self._api_key}, method="GET")
         try:
@@ -116,3 +116,93 @@ def normalize_daily(pages: list[dict], source: str = "jquants_v2") -> list[Obser
                 availability_evidence="raw-body-sha256:" + receipt["body_sha256"],
             ))
     return rows
+
+
+class MarketDataProvider:
+    """Same read-only daily API for fixture and live; portable immutable raw bundle."""
+    def __init__(self, transport, raw_root):
+        self.transport, self.raw_root = transport, Path(raw_root)
+
+    def acquire(self, sessions):
+        from .storage import read_verified
+        receipts = []
+        for session in sessions:
+            _, paths = acquire_daily(self.transport, session, self.raw_root)
+            for path in paths:
+                path = Path(path)
+                receipt = json.loads(read_verified(path))
+                body = read_verified(path.parent.parent / 'bodies' / (receipt['body_sha256']+'.json'))
+                receipts.append(dict(receipt=receipt, body=body.decode('utf-8')))
+        bundle = dict(provider='jquants_v2', schema_version=1, receipts=receipts)
+        return put(self.raw_root / 'bundles', canonical(bundle))
+
+    @staticmethod
+    def regenerate(bundle, source='jquants_v2'):
+        pages = []
+        if bundle['provider'] != 'jquants_v2' or bundle['schema_version'] != 1:
+            raise ValueError('unsupported raw bundle')
+        for record in bundle['receipts']:
+            receipt, body = record['receipt'], record['body'].encode('utf-8')
+            if digest(body) != receipt['body_sha256']:
+                raise ValueError('raw body hash mismatch')
+            if receipt['endpoint'] != '/equities/bars/daily':
+                raise ValueError('unsupported raw endpoint')
+            payload = json.loads(body)
+            if any(r['Date'] != receipt['params']['date'] for r in payload['data']):
+                raise ValueError('raw date mismatch')
+            pages.append(dict(receipt=receipt, rows=payload['data']))
+        return normalize_daily(pages, source=source)
+
+
+def acquire_reference(transport, path, params, raw_root):
+    """Archive versioned reference responses; never infer listing/delisting dates.
+
+    Calendar requires a bounded range; master requires an explicit snapshot date.
+    Current master data must not become historical membership automatically.
+    """
+    if path not in ('/markets/calendar', '/equities/master'):
+        raise ValueError('unsupported reference endpoint')
+    if path == '/equities/master' and not params.get('date'):
+        raise ValueError('explicit master snapshot date required')
+    if path == '/markets/calendar' and not all(params.get(k) for k in ('from','to')):
+        raise ValueError('bounded calendar range required')
+    records, seen = [], set()
+    query = dict(params)
+    for _ in range(1000):
+        response = transport.get(path, query)
+        root = Path(raw_root)/'jquants_v2'/path.rsplit('/',1)[-1]
+        body = put(root/'bodies', response.body)
+        receipt = dict(schema_version=1, source='jquants_v2', endpoint=path,params=dict(query),
+                       ingested_at=utc(response.ingested_at).isoformat(),body_sha256=body.stem)
+        put(root/'receipts',canonical(receipt))
+        records.append(dict(receipt=receipt,body=response.body.decode('utf-8')))
+        payload = json.loads(response.body)
+        if not isinstance(payload.get('data'),list):
+            raise ValueError('reference data array required')
+        cursor=payload.get('pagination_key')
+        if not cursor:
+            return put(root/'bundles',canonical(dict(provider='jquants_v2',schema_version=1,receipts=records)))
+        if not isinstance(cursor,str) or cursor in seen:
+            raise ValueError('invalid/repeated reference cursor')
+        seen.add(cursor); query=dict(params,pagination_key=cursor)
+    raise ValueError('reference pagination limit exceeded')
+
+
+def calendar_from_raw(bundle):
+    """Cash equities: OSE holiday trading is NOT a TSE trading session."""
+    from .market import TradingCalendar
+    days, ingestions = {}, []
+    for record in bundle['receipts']:
+        receipt,body=record['receipt'],record['body'].encode('utf-8')
+        if receipt['endpoint'] != '/markets/calendar' or digest(body) != receipt['body_sha256']:
+            raise ValueError('invalid calendar raw lineage')
+        ingestions.append(receipt['ingested_at'])
+        for row in json.loads(body)['data']:
+            if row['Date'] in days or str(row['HolDiv']) not in ('0','1','2','3'):
+                raise ValueError('duplicate/unknown calendar classification')
+            days[row['Date']] = 'open' if str(row['HolDiv']) in ('1','2') else 'exchange_closed_'+str(row['HolDiv'])
+    if not days or any(r['receipt']['params']['from'] not in days or r['receipt']['params']['to'] not in days
+                       for r in bundle['receipts']):
+        raise ValueError('calendar response coverage incomplete')
+    return TradingCalendar(version=digest(canonical(bundle)),source='jquants_v2:markets/calendar',
+                           days=days,available_at=max(ingestions,key=timestamp))

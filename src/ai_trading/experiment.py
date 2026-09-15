@@ -13,6 +13,7 @@ from uuid import uuid4
 from .backtest import BacktestConfig, run_backtest
 from .storage import canonical, digest, encode_observation
 from .models import Observation, timestamp
+from .market import provenance as market_provenance
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class Experiment:
     result_hash: str
     status: str
     failure_reason: object
+    market_provenance: object = None
 
 
 def validate_study(study):
@@ -50,7 +52,7 @@ def validate_study(study):
             raise ValueError("periods must be ordered and disjoint")
         previous = end
     u = study["universe_definition"]
-    if u["type"] != "static_point_in_time" or not u["evidence"].strip():
+    if u["type"] not in ("static_point_in_time", "historical_point_in_time") or not u["evidence"].strip():
         raise ValueError("static PIT universe with evidence required")
     if timestamp(u["known_at"]) >= timestamp(periods["development"]["start"] + "T00:00:00+09:00"):
         raise ValueError("future universe information forbidden")
@@ -107,6 +109,11 @@ def prepare(rows, config, study, split):
         raise ValueError("sessions cross evaluation boundary")
     if tuple(sorted(study["universe_definition"]["symbols"])) != config.universe:
         raise ValueError("universe differs from frozen study")
+    if study['universe_definition']['type'] == 'historical_point_in_time' and config.market is None:
+        raise ValueError('historical universe requires market context')
+    if config.market is not None:
+        from .market import validate_market
+        validate_market(config.market, config.sessions, config.universe)
     end = timestamp(config.sessions[-1] + "T18:00:00+09:00")
     selected = []
     for r in rows:
@@ -123,6 +130,11 @@ def prepare(rows, config, study, split):
             selected.append(r)
     if not selected:
         raise ValueError("no eligible observations in evaluation sessions")
+    if config.market is not None:
+        from .market import raw_observations
+        raw_records = {canonical(encode_observation(r)) for r in raw_observations(config.market)}
+        if any(canonical(encode_observation(r)) not in raw_records for r in selected):
+            raise ValueError('processed observation has no matching immutable raw lineage')
     return selected
 
 
@@ -161,6 +173,21 @@ class ExperimentStore:
                 raise PermissionError('ML model selection cannot access holdout')
             if raw['ml'].get('seed', 0) != random_seed:
                 raise ValueError('ML seed must equal experiment random_seed')
+        if raw.get('market') is not None:
+            if split == 'holdout':
+                raise PermissionError('Phase 5 holdout remains sealed')
+            raw = json.loads(canonical(raw))
+            cutoff = timestamp(self.study['periods'][split]['end'] + 'T18:00:00+09:00')
+            # Raw payloads are also inputs: never archive another split through config.
+            from .market import raw_observations
+            for r in raw_observations(raw['market']):
+                d = json.loads(r.payload_json)['session_date']
+                p = self.study['periods'][split]
+                if not p['start'] <= d <= p['end'] or r.available_at >= cutoff or r.ingested_at >= cutoff:
+                    raise PermissionError('raw bundle crosses accessible split/knowledge boundary')
+            for dataset in ('historical_universe', 'corporate_actions'):
+                raw['market'][dataset] = [r for r in raw['market'][dataset]
+                    if timestamp(r['available_at']) < cutoff and timestamp(r['ingested_at']) < cutoff]
         # Even failed attempts must never archive another split's data.
         period = self.study["periods"][split]
         start = timestamp(period["start"] + "T00:00:00+09:00")
@@ -187,7 +214,8 @@ class ExperimentStore:
                            {k: raw.get(k, "0") for k in ("commission_bps", "commission_fixed")},
                            dict(slippage_bps=raw.get("slippage_bps", "0")), digest(canonical(records)),
                            digest(canonical(cfg)), env["git_commit"], random_seed, result.get("metrics", {}),
-                           digest(canonical(out)), out["status"], out["failure_reason"])
+                           digest(canonical(out)), out["status"], out["failure_reason"],
+                           market_provenance(raw['market']) if raw.get('market') else None)
         artifacts = {"config": cfg, "inputs": records, "environment": env, "outcome": out,
                      "daily_equity": result.get("snapshots", []), "orders": result.get("orders", []),
                      "fills": result.get("fills", []), "trade_history": result.get("trade_history", []),
@@ -240,6 +268,12 @@ class ExperimentStore:
         if digest(canonical(env["sources"])) != env["code_hash"]:
             raise ValueError("source snapshot mismatch")
         out = artifacts["outcome"]
+        if cfg['backtest'].get('market') is not None:
+            expected_market = market_provenance(cfg['backtest']['market'])
+            if model.get('market_provenance') != expected_market:
+                raise ValueError('market provenance mismatch')
+            if out['status'] == 'completed' and out['result']['market_provenance'] != expected_market:
+                raise ValueError('result market provenance mismatch')
         if (model["git_commit"] != env["git_commit"] or model["metrics"] != artifacts["metrics"] or
                 model["status"] != out["status"] or model["failure_reason"] != out["failure_reason"]):
             raise ValueError("experiment metadata mismatch")

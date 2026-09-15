@@ -56,8 +56,12 @@ def features(rows, config, volume=False):
         selected = as_of(rows, cutoff)
         sources = {(r.entity_id, json.loads(r.payload_json)['session_date']): r
                    for r in selected if r.dataset == 'daily_bars' and r.event_at < cutoff}
-        for symbol in config.universe:
+        from .market import membership, crosses_action
+        for symbol in membership(config, session, cutoff):
             dates = config.sessions[i-60:i+1]
+            if (symbol not in membership(config, dates[0], timestamp(dates[0]+'T18:00:00+09:00'))
+                    or crosses_action(config, symbol, dates[0], session, cutoff)):
+                continue
             history = [bars.get((symbol, d)) for d in dates]
             if any(b is None or b['close'] is None for b in history):
                 continue
@@ -92,7 +96,13 @@ def labels(rows, config, horizon):
         start,end = config.sessions[i],config.sessions[i+horizon]
         cutoff = timestamp(end+'T18:00:00+09:00')
         bars = _bars(rows, cutoff, config)
+        from .market import crosses_action, membership
         for symbol in config.universe:
+            if (symbol not in membership(config, start, timestamp(start+'T18:00:00+09:00'))
+                    or symbol not in membership(config, end, cutoff)):
+                continue
+            if crosses_action(config, symbol, start, end, cutoff):
+                continue
             a,b = bars.get((symbol,start),{}).get('close'),bars.get((symbol,end),{}).get('close')
             if a is not None and b is not None:
                 ret = b/a-1
@@ -182,9 +192,14 @@ def walk_forward(rows, config, cfg):
             if f['session'] in config.sessions[start:start+cfg.step]:
                 predictions.append(dict(session=f['session'],symbol=f['symbol'],probability=predict(model,f['values']),fold=len(folds)-1))
     scored=[(p['probability'],ys[p['session'],p['symbol']]['y']) for p in predictions if (p['session'],p['symbol']) in ys]
-    return dict(feature_definition=definitions, features=fs, target_definition=f'close[t+{cfg.horizon}]/close[t]-1 > 0; endpoint PIT; label only',
+    result = dict(feature_definition=definitions, features=fs, target_definition=f'close[t+{cfg.horizon}]/close[t]-1 > 0; endpoint PIT; label only',
                 evaluation_period=[config.sessions[cfg.first_prediction],config.sessions[-1]],
                 config=json.loads(canonical(asdict(cfg))), preprocessing=dict(type='standard_scaler',fit='train_only',ddof=0,shuffle=False),
                 folds=folds,predictions=predictions,prediction_metrics=prediction_metrics(scored),
                 constant_probability_reference=prediction_metrics([(.5,y) for p,y in scored]),
                 unscored_predictions=len(predictions)-len(scored), evidence='synthetic fixture results are not evidence of AI performance')
+
+    if config.market is not None:
+        from .statistics import prediction_intervals
+        result['prediction_confidence_intervals'] = prediction_intervals(predictions, ys, config.market['statistical_evaluation'])
+    return result

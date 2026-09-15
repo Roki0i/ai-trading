@@ -38,6 +38,7 @@ class BacktestConfig:
     pit_mode: str = "observed"
     knowledge_at: Optional[str] = None
     ml: Optional[dict] = None
+    market: Optional[dict] = None
 
     def __post_init__(self):
         object.__setattr__(self, "sessions", tuple(self.sessions))
@@ -74,6 +75,11 @@ class BacktestConfig:
             raise ValueError("historical mode requires knowledge_at")
         if self.knowledge_at is not None:
             timestamp(self.knowledge_at)
+        if self.market is not None:
+            from .market import validate_market
+            if self.pit_mode != "observed":
+                raise ValueError("Phase 5 requires observed PIT")
+            validate_market(self.market, self.sessions, self.universe)
 
 
 def _bars(rows, cutoff, config):
@@ -90,7 +96,12 @@ def _bars(rows, cutoff, config):
         if errors:
             raise ValueError("invalid PIT bar: " + ", ".join(errors))
         if data.get("adjustment_factor") != 1:
-            raise ValueError("corporate actions/unknown adjustment factors are unsupported")
+            from .market import actions
+            matches = [json.loads(a.payload_json) for a in actions(config, cutoff)
+                       if a.entity_id == row.entity_id and json.loads(a.payload_json)['effective_date'] == data['session_date']
+                       and json.loads(a.payload_json)['kind'] in ('stock_split', 'reverse_split')]
+            if data.get('adjustment_factor') is None or len(matches) != 1 or decimal(data.get('adjustment_factor')) * decimal(matches[0]['ratio']) != 1:
+                raise ValueError("corporate actions/unknown adjustment factors are unsupported")
         key = (row.entity_id, data["session_date"])
         if key in result:
             raise ValueError("ambiguous market bar")
@@ -102,6 +113,9 @@ def run_backtest(rows, config):
     # Keep financial arithmetic independent of the caller's Decimal context.
     with localcontext(Context(prec=28)):
         rows = list(rows)
+        if config.market is not None:
+            from .market import validate_market
+            validate_market(config.market, config.sessions, config.universe)
         if config.ml is None:
             return _run(rows, config)
         from .ml import MLConfig, walk_forward
@@ -123,10 +137,75 @@ def _run(rows, config, signals=None, evaluation_start=0):
     fixed = decimal(config.commission_fixed)
     slip = decimal(config.slippage_bps) / 10000
     previous_week, bought = None, False
+    events, missing, applied, receivables, halts = [], [], {}, [], {}
+    from .market import membership, actions, known, crosses_action
     for session in config.sessions[evaluation_start:]:
         cutoff = timestamp(session + "T18:00:00+09:00")
+        eligible_universe = membership(config, session, cutoff)
         bars = _bars(rows, cutoff, config)
         current = {s: b for (s, d), b in bars.items() if d == session}
+        if config.market is not None:
+            # Entitlements belong to holders before the effective session's executions.
+            for action in actions(config, cutoff):
+                p = json.loads(action.payload_json)
+                effective = p['effective_date']
+                if effective > session:
+                    continue
+                key = action.key
+                if key in applied:
+                    if applied[key] != action.payload_json:
+                        raise ValueError('revision of applied corporate action')
+                    continue
+                if effective < session:
+                    if effective >= config.sessions[evaluation_start]:
+                        raise ValueError('late corporate action with position')
+                    applied[key] = action.payload_json
+                    continue
+                symbol = action.entity_id
+                if p['kind'] in ('stock_split', 'reverse_split'):
+                    b = current.get(symbol)
+                    if b is None or b.get('adjustment_factor') is None or decimal(b['adjustment_factor']) * decimal(p['ratio']) != 1:
+                        raise ValueError('split/raw adjustment factor inconsistent')
+                q = positions.get(symbol, 0)
+                if p['kind'] == 'dividend':
+                    receivables.append(dict(symbol=symbol, amount=decimal(p['cash_per_share'])*q,
+                                            payment_date=p['payment_date']))
+                else:
+                    ratio = decimal(p['ratio'])
+                    new_q = q * ratio
+                    if new_q != int(new_q):
+                        raise ValueError('fractional split entitlement requires cash-in-lieu evidence')
+                    if q:
+                        positions[symbol] = int(new_q)
+                        marks[symbol] = (marks[symbol][0]/ratio, marks[symbol][1])
+                    for o in orders:
+                        if o['symbol'] == symbol and o['status'] == 'pending':
+                            o.update(status='cancelled', resolved_session=session, reason='corporate_action')
+                applied[key] = action.payload_json
+                events.append(dict(session=session, symbol=symbol, kind=p['kind'], quantity_before=q))
+            for r in list(receivables):
+                if r['payment_date'] <= session:
+                    cash += r['amount']
+                    events.append(dict(session=session, symbol=r['symbol'], kind='dividend_payment', amount=str(r['amount'])))
+                    receivables.remove(r)
+            for r in known(config.market, 'historical_universe', cutoff):
+                p = json.loads(r.payload_json)
+                if p['delisting_date'] and p['delisting_date'] <= session and positions.get(r.entity_id):
+                    raise ValueError('delisting with open position: explicit liquidation evidence required')
+            for symbol in eligible_universe:
+                b = current.get(symbol)
+                reason = ('api_gap' if b is None else 'missing_price' if b['close'] is None else
+                          'missing_volume' if b['volume'] is None else 'trading_halt' if b['volume'] == 0 else None)
+                if reason:
+                    missing.append(dict(session=session, symbol=symbol, reason=reason))
+                halts[symbol] = halts.get(symbol, 0)+1 if reason else 0
+                if positions.get(symbol) and (b is None or b['close'] is None):
+                    raise ValueError('missing held price: valuation stopped; '+symbol+' '+session+' '+reason)
+                if positions.get(symbol) and halts[symbol] > config.market['missing_data_policy']['max_halt_sessions']:
+                    raise ValueError('long trading halt: valuation stopped')
+            for o in orders:
+                if o['status'] == 'pending' and o['symbol'] not in eligible_universe:
+                    o.update(status='cancelled', resolved_session=session, reason='universe_exit')
         # Orders created at an earlier session can execute only on a new session.
         pending = [o for o in orders if o["status"] == "pending" and o["decision_session"] < session]
         for order in sorted(pending, key=lambda o: (o["side"] != "sell", o["symbol"])):
@@ -162,7 +241,7 @@ def _run(rows, config, signals=None, evaluation_start=0):
         for symbol, bar in current.items():
             if bar["close"] is not None:
                 marks[symbol] = (decimal(bar["close"]), session)
-        equity = cash + sum(marks[s][0] * q for s, q in positions.items())
+        equity = cash + sum(marks[s][0] * q for s, q in positions.items()) + sum(r["amount"] for r in receivables)
         snapshots.append(dict(session=session, cash=str(cash), positions=dict(sorted(positions.items())),
                               marks={s: str(marks[s][0]) for s in sorted(positions)},
                               stale_marks=[s for s in sorted(positions) if marks[s][1] != session],
@@ -179,13 +258,21 @@ def _run(rows, config, signals=None, evaluation_start=0):
             if order["status"] == "pending":
                 order.update(status="cancelled", resolved_session=session, reason="weekly_replacement")
         histories = {}
-        for symbol in config.universe:
+        for symbol in eligible_universe:
             # Require today's price and contiguous configured sessions for momentum.
             if symbol not in current or current[symbol]["close"] is None:
                 continue
             dates = [d for d in config.sessions if d <= session]
             if config.strategy == "momentum":
                 dates = dates[-config.lookback - 1:]
+            if config.strategy == 'ml':
+                dates = dates[-61:]
+            required_history = 61 if config.strategy == 'ml' else config.lookback+1
+            if config.market is not None and config.strategy in ('momentum', 'ml') and (
+                    len(dates) < required_history or symbol not in membership(
+                        config, dates[0], timestamp(dates[0]+'T18:00:00+09:00')) or crosses_action(config, symbol, dates[0], session, cutoff)):
+                missing.append(dict(session=session, symbol=symbol, reason='insufficient_or_action_crossing_history'))
+                continue
             prices = [bars.get((symbol, d), {}).get("close") for d in dates]
             if config.strategy == "momentum" and any(p is None for p in prices):
                 continue
@@ -194,7 +281,7 @@ def _run(rows, config, signals=None, evaluation_start=0):
             eligible = [s for s in signals.get(session, []) if s in histories]
             weights = {s: Decimal(1)/len(eligible) for s in eligible}
         else:
-            weights = target_weights(config.strategy, histories, config.universe, config.lookback, config.top_n)
+            weights = target_weights(config.strategy, histories, eligible_universe, config.lookback, config.top_n)
         for symbol in sorted(set(weights) | set(positions)):
             target = int(equity * weights[symbol] / marks[symbol][0] / config.lot_size) * config.lot_size if symbol in weights else 0
             difference = target - positions.get(symbol, 0)
@@ -204,8 +291,18 @@ def _run(rows, config, signals=None, evaluation_start=0):
                                    side="buy" if difference > 0 else "sell", quantity=abs(difference), status="pending"))
         if config.strategy == "buy_and_hold" and weights:
             bought = True
-    return dict(schema_version=1, config=asdict(config), orders=orders, fills=fills,
-                snapshots=snapshots, metrics=performance(config.initial_cash, snapshots, fills))
+    result = dict(schema_version=1, config=asdict(config), orders=orders, fills=fills,
+                  snapshots=snapshots, metrics=performance(config.initial_cash, snapshots, fills))
+    if config.market is not None:
+        from .market import provenance
+        from .statistics import interval, returns
+        import statistics
+        result.update(market_provenance=provenance(config.market), corporate_action_ledger=events,
+                      missing_data_events=missing,
+                      dividend_receivables=[dict(r, amount=str(r['amount'])) for r in receivables])
+        result['statistical_evaluation'] = dict(mean_daily_return=interval(
+            [v for d,v in returns(result)], statistics.mean, config.market['statistical_evaluation']))
+    return result
 
 
 def save_experiment(rows, config, output):

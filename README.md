@@ -60,3 +60,13 @@ PYTHONPATH=src python3 -m ai_trading.ml_fixture --store experiments/phase4-fixtu
 
 これは架空データによる動作検証です。収益率はAI性能の証拠にはなりません。
 [設計、保存内容、リーク対策と残る課題](docs/ml-experiments.md)を参照してください。
+
+## Phase 5: 市場データ・バックテスト堅牢化
+
+実API/fixture共通Provider、raw再生成、明示営業日カレンダー、PIT銘柄履歴、分割・併合・配当、上場廃止時の停止、厳格な欠損方針、コスト比較、block bootstrapを追加しました。実市場の履歴完全性・実API疎通は未検証です。holdoutは開封しません。
+
+```sh
+PYTHONPATH=src python3 -m ai_trading.market_fixture --store experiments/phase5-verified
+```
+
+[設計・provenance・欠損/企業行動の処理・実市場で残る制約](docs/phase5-market-validation.md)
