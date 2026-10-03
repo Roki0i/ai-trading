@@ -1,5 +1,7 @@
 # Phase 7: Portfolio Assistant Core
 
+Phase 8ではこの契約を維持して日足adapterを追加しています。[市場データ連携](market-data-integration.md)を参照してください。以下の「手動/fakeのみ」はPhase 7時点の範囲です。
+
 実保有株を手入力で記録し、平均取得原価、評価損益、通貨別構成比、設定した閾値への到達状況を取得する独立したCLIです。投資判断の自動化、売買推奨、broker接続・注文送信、shell実行、LLM、Raphael依存はありません。
 
 ## 研究基盤からの分離

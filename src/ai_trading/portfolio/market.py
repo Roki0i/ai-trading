@@ -37,7 +37,8 @@ class JsonSnapshotProvider:
         snapshots = []
         expected = {"symbol", "price", "previous_close", "currency", "as_of", "source"}
         for row in data["snapshots"]:
-            if not isinstance(row, dict) or set(row) != expected:
+            if (not isinstance(row, dict) or not expected <= set(row)
+                    or set(row) - expected - {"market", "data_date", "ingested_at"}):
                 raise PortfolioError("invalid_snapshot")
             snapshots.append(MarketSnapshot(**row))
         return cls(snapshots)

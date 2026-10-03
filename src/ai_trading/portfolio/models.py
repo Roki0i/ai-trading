@@ -3,7 +3,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass, fields
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Context, Decimal, InvalidOperation, ROUND_HALF_EVEN
 from typing import Optional
 
@@ -157,6 +157,9 @@ class MarketSnapshot:
     currency: str
     as_of: datetime
     source: str
+    market: Optional[str] = None
+    data_date: Optional[str] = None
+    ingested_at: Optional[datetime] = None
 
     def __post_init__(self):
         identity(self.symbol, self.currency)
@@ -165,11 +168,24 @@ class MarketSnapshot:
             object.__setattr__(self, "previous_close", decimal(self.previous_close))
         object.__setattr__(self, "as_of", instant(self.as_of))
         text(self.source, 120)
+        if any(value is not None for value in (self.market, self.data_date, self.ingested_at)):
+            text(self.market, 40)
+            try:
+                if date.fromisoformat(self.data_date).isoformat() != self.data_date:
+                    raise ValueError()
+            except (ValueError, TypeError):
+                raise PortfolioError("invalid_data_date") from None
+            object.__setattr__(self, "ingested_at", instant(self.ingested_at))
+            if self.ingested_at < self.as_of:
+                raise PortfolioError("snapshot_ingestion_precedes_data")
 
     def to_dict(self):
-        return dict(symbol=self.symbol, price=number(self.price),
+        result = dict(symbol=self.symbol, price=number(self.price),
                     previous_close=number(self.previous_close), currency=self.currency,
                     as_of=stamp(self.as_of), source=self.source)
+        if self.data_date is not None:
+            result.update(market=self.market, data_date=self.data_date, ingested_at=stamp(self.ingested_at))
+        return result
 
 
 @dataclass(frozen=True)

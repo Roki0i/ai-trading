@@ -61,7 +61,7 @@ def status(transactions, provider, config, as_of):
                     raise PortfolioError("snapshot_identity_mismatch")
                 row["snapshot"] = snapshot.to_dict()
                 age = (at - snapshot.as_of).total_seconds()
-                row["valuation_status"] = ("future" if age < 0 else "stale"
+                row["valuation_status"] = ("future" if age < 0 or (snapshot.ingested_at is not None and snapshot.ingested_at > at) else "stale"
                     if age > config.max_snapshot_age_seconds else "before_transaction"
                     if snapshot.as_of < max(tx.executed_at for tx in txs
                         if (tx.symbol, tx.currency) == (position.symbol, position.currency)) else "ok")
@@ -82,6 +82,7 @@ def status(transactions, provider, config, as_of):
             else:
                 group["complete"] = False
                 group["unpriced_symbols"].append(position.symbol)
+            row["stale"] = row["valuation_status"] == "stale"
             positions.append(row)
         totals = []
         for currency, group in sorted(groups.items()):
@@ -125,6 +126,7 @@ def alerts(report, config):
                 }[comparison]()
                 result.append(dict(type=kind, symbol=row["symbol"], currency=row["currency"],
                     severity=severity, triggered=triggered, value=number(value), threshold=number(threshold),
+                    stale=row["stale"], valuation_status=row["valuation_status"],
                     evaluation="not_evaluable" if value is None else "evaluated",
                     reason="price_or_weight_unavailable" if value is None else
                            "configured_threshold_reached" if triggered else "configured_threshold_not_reached"))

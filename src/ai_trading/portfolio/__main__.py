@@ -4,12 +4,13 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
+from dataclasses import replace
 from uuid import uuid4
 
 from .models import Transaction, RuleConfig, PortfolioError, now, stamp, object_from_json
 from .store import PortfolioStore
 from .market import JsonSnapshotProvider
-from .engine import status, alerts
+from .engine import status, alerts, replay
 
 SCHEMA_VERSION = 1
 
@@ -40,6 +41,10 @@ def parser():
         if name in ("status", "alerts"):
             cmd.add_argument("--snapshot", type=Path)
             cmd.add_argument("--as-of")
+            cmd.add_argument("--market-provider", choices=("manual", "jquants", "jquants-fixture"), default="manual")
+            cmd.add_argument("--market-fixture", type=Path)
+            cmd.add_argument("--market-lookback-days", type=int)
+            cmd.add_argument("--max-price-age-seconds", type=int)
         if name == "config":
             cmd.add_argument("--file", type=Path, help="省略時は現在設定を表示。指定時は全設定を置換")
     return root
@@ -68,7 +73,20 @@ def execute(args):
         return dict(rules=config.to_dict())
     if args.command == "transactions":
         return dict(transactions=[tx.to_dict() for tx in transactions])
-    provider = JsonSnapshotProvider.from_file(args.snapshot) if args.snapshot else JsonSnapshotProvider()
+    if args.max_price_age_seconds is not None:
+        config = replace(config, max_snapshot_age_seconds=args.max_price_age_seconds)
+    if args.market_provider == "manual":
+        if args.market_fixture is not None or args.market_lookback_days is not None:
+            raise PortfolioError("invalid_arguments")
+        provider = JsonSnapshotProvider.from_file(args.snapshot) if args.snapshot else JsonSnapshotProvider()
+    else:
+        if args.snapshot or (args.market_provider == "jquants-fixture") != (args.market_fixture is not None):
+            raise PortfolioError("invalid_arguments")
+        from .jquants import prepare_provider
+        provider = prepare_provider(replay(transactions), at=args.as_of or now(),
+            lookback_days=args.market_lookback_days if args.market_lookback_days is not None else 90,
+            fixture_path=args.market_fixture)
+    # 取得後に評価時刻を確定し、取得時刻を過去へ繰り上げない。
     report = status(transactions, provider, config, args.as_of or now())
     report["alerts"] = alerts(report, config)["alerts"]
     return report
@@ -92,6 +110,12 @@ def display(data, command):
     else:
         print(f"評価時点: {data['as_of']}")
         print(f"保有銘柄数: {data['portfolio_summary']['open_position_count']}")
+        for row in data["positions"]:
+            snapshot = row["snapshot"]
+            if snapshot and snapshot.get("data_date"):
+                print(f"{row['symbol']}: 日足終値（リアルタイムではありません） "
+                      f"data_date={snapshot['data_date']} as_of={snapshot['as_of']} "
+                      f"source={snapshot['source']}")
         for row in data["currency_summaries"]:
             value = row["market_value"] if row["complete"] else "評価不能（価格欠落）"
             print(f"{row['currency']}: 原価 {row['total_cost']} 評価額 {value} 実現損益 {row['realized_pnl']}")

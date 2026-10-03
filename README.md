@@ -104,3 +104,16 @@ python3 -m ai_trading.portfolio alerts --json
 Windows PowerShellでは`$env:PYTHONPATH="src"`、`$env:PYTHONUTF8="1"`を設定し、`python3`を`py -3.12`へ置き換えます。
 
 [Windows/Macの手順・台帳とJSON契約・計算仕様・制約](docs/portfolio-assistant.md)
+
+## Phase 8: Market Data Integration
+
+Portfolioから既存read-only J-Quants基盤の日足終値を取得できます。リアルタイム株価ではありません。JPYの普通株式に限定し、日付付きmaster・calendar・日足品質を検証します。価格のデータ日と取得時刻を分離し、古い価格や取得時刻より過去の評価は明示的に評価不能とします。
+
+```sh
+PYTHONUTF8=1 PYTHONPATH=src python3 -m ai_trading.portfolio status --market-provider jquants --json
+PYTHONUTF8=1 PYTHONPATH=src python3 -m ai_trading.portfolio alerts --market-provider jquants --json
+```
+
+liveはユーザーが環境へ設定した`JQUANTS_API_KEY`が必要です。未設定時はエラーで停止し、fixtureへ自動fallbackしません。既定のmanualは通信せず、credential不要の`jquants-fixture`も明示選択できます。実API疎通は未検証です。
+
+[fixture起動手順・adapter・JSON互換性・stale/企業行動の方針・制約](docs/market-data-integration.md)
