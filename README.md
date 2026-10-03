@@ -84,3 +84,23 @@ PYTHONPATH=src python3 -m ai_trading.forward verify --root experiments/phase6-de
 最初のコマンドの銘柄・日付はfixture専用です。credentialがある環境では実APIへ接続するため、契約範囲内の検証対象へ置き換えてください。demoは架空developmentデータの再生であり、未観測期間のForward成績ではありません。既存のfreeze先への再作成は拒否します。
 
 [Phase 6の実装・検証結果・運用手順・残る制約](docs/phase6-forward-test.md)
+
+## Phase 7: Portfolio Assistant Core
+
+研究用paper portfolioとは独立した、実保有株の取引台帳・平均取得原価・損益・通貨別構成比・設定済み閾値の通知を追加しました。自動売買、broker注文、LLM、Raphael依存はありません。価格は手動JSONで入力し、未取得・古い価格は評価不能として明示します。
+
+```sh
+export PYTHONPATH=src
+export PYTHONUTF8=1
+python3 -m ai_trading.portfolio init --json
+python3 -m ai_trading.portfolio add --symbol 7203 --side buy --quantity 100 --price 2500 --currency JPY --executed-at 2025-01-01 --json
+python3 -m ai_trading.portfolio config --file config/portfolio.example.json --json
+python3 -m ai_trading.portfolio status --json
+python3 -m ai_trading.portfolio alerts --json
+```
+
+専用DBは`data/user-portfolio/portfolio.sqlite3`。既存ファイルへのinitは拒否します。実価格の自動取得はなく、snapshotなしでは評価額・損益率がnullになります。閾値は既定で無効で、例示設定を明示適用します。`--json`はschema_version / generated_at付きの機械可読出力、省略時は人間向けの表示です。
+
+Windows PowerShellでは`$env:PYTHONPATH="src"`、`$env:PYTHONUTF8="1"`を設定し、`python3`を`py -3.12`へ置き換えます。
+
+[Windows/Macの手順・台帳とJSON契約・計算仕様・制約](docs/portfolio-assistant.md)

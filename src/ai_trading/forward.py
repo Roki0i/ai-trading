@@ -7,6 +7,7 @@ Replay only verifies the paper engine; recorded decisions are never replaced.
 import json
 import sqlite3
 import statistics
+from contextlib import contextmanager
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -101,10 +102,16 @@ class Ledger:
             db.execute("CREATE TRIGGER IF NOT EXISTS no_update BEFORE UPDATE ON decisions BEGIN SELECT RAISE(ABORT, 'append only'); END")
             db.execute("CREATE TRIGGER IF NOT EXISTS no_delete BEFORE DELETE ON decisions BEGIN SELECT RAISE(ABORT, 'append only'); END")
 
+    @contextmanager
     def connect(self):
+        """commit/rollback後に必ず接続を閉じ、Windowsのファイルロックを解放する。"""
         db = sqlite3.connect(self.db_path,timeout=30)
-        db.execute('PRAGMA synchronous=FULL')
-        return db
+        try:
+            db.execute('PRAGMA synchronous=FULL')
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def artifact(self, sha):
         if len(sha) != 64 or any(c not in '0123456789abcdef' for c in sha):

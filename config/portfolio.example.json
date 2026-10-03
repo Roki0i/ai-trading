@@ -1,0 +1,7 @@
+{
+  "take_profit_pct": "20",
+  "loss_warning_pct": "-10",
+  "daily_move_pct": "7",
+  "max_position_weight_pct": "30",
+  "max_snapshot_age_seconds": 86400
+}

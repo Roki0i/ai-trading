@@ -1,0 +1,133 @@
+"""単体利用と外部client向けのPortfolio CLI。注文・通信・shell実行は行わない。"""
+import argparse
+import json
+import sqlite3
+import sys
+from pathlib import Path
+from uuid import uuid4
+
+from .models import Transaction, RuleConfig, PortfolioError, now, stamp, object_from_json
+from .store import PortfolioStore
+from .market import JsonSnapshotProvider
+from .engine import status, alerts
+
+SCHEMA_VERSION = 1
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        # argparseの生入力反射を避け、機械可読エラーを統一する。
+        raise PortfolioError("invalid_arguments")
+
+
+def parser():
+    root = Parser(description="実保有株の取引台帳・評価・閾値通知")
+    root.add_argument("--db", type=Path, default=Path("data/user-portfolio/portfolio.sqlite3"))
+    root.add_argument("--json", action="store_true")
+    sub = root.add_subparsers(dest="command", required=True, parser_class=Parser)
+    for name in ("init", "add", "transactions", "status", "alerts", "config"):
+        cmd = sub.add_parser(name)
+        # 共通引数はサブコマンド前後のどちらにも置ける。
+        cmd.add_argument("--db", type=Path, default=argparse.SUPPRESS)
+        cmd.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+        if name == "add":
+            cmd.add_argument("--id", default=None)
+            for key in ("symbol", "side", "quantity", "price", "currency", "executed-at"):
+                cmd.add_argument("--" + key, required=True)
+            cmd.add_argument("--fee", default="0")
+            cmd.add_argument("--note", default="")
+            cmd.add_argument("--asset-type", default="equity")
+        if name in ("status", "alerts"):
+            cmd.add_argument("--snapshot", type=Path)
+            cmd.add_argument("--as-of")
+        if name == "config":
+            cmd.add_argument("--file", type=Path, help="省略時は現在設定を表示。指定時は全設定を置換")
+    return root
+
+
+def execute(args):
+    store = PortfolioStore(args.db)
+    if args.command == "init":
+        PortfolioStore.initialize(args.db)
+        return dict(initialized=True)
+    if args.command == "add":
+        tx = Transaction(id=args.id or uuid4().hex, symbol=args.symbol, side=args.side,
+            quantity=args.quantity, price=args.price, fee=args.fee, currency=args.currency,
+            executed_at=args.executed_at, note=args.note, created_at=now(), asset_type=args.asset_type)
+        return dict(transaction=store.add(tx).to_dict())
+    if args.command == "config" and args.file:
+        with args.file.open("rb") as handle:
+            raw = handle.read(16385)
+        if len(raw) > 16384:
+            raise PortfolioError("config_too_large")
+        config = RuleConfig.from_dict(object_from_json(raw))
+        store.configure(config)
+        return dict(rules=config.to_dict())
+    transactions, config = store.read()
+    if args.command == "config":
+        return dict(rules=config.to_dict())
+    if args.command == "transactions":
+        return dict(transactions=[tx.to_dict() for tx in transactions])
+    provider = JsonSnapshotProvider.from_file(args.snapshot) if args.snapshot else JsonSnapshotProvider()
+    report = status(transactions, provider, config, args.as_of or now())
+    report["alerts"] = alerts(report, config)["alerts"]
+    return report
+
+
+def display(data, command):
+    """人間向けの表示。機械向けclientは必ず--jsonを指定する。"""
+    if command == "init":
+        print("Portfolio DBを作成しました。")
+    elif command == "add":
+        row = data["transaction"]
+        print(f"取引を登録しました: {row['id']} {row['symbol']} {row['side']} {row['quantity']}")
+    elif command == "config":
+        for key, value in data["rules"].items():
+            print(f"{key}: {value if value is not None else '無効'}")
+    elif command == "transactions":
+        print(f"取引件数: {len(data['transactions'])}")
+        for row in data["transactions"]:
+            print(f"{row['executed_at']} {row['id']} {row['symbol']} {row['side']} "
+                  f"{row['quantity']} × {row['price']} {row['currency']} 手数料 {row['fee']}")
+    else:
+        print(f"評価時点: {data['as_of']}")
+        print(f"保有銘柄数: {data['portfolio_summary']['open_position_count']}")
+        for row in data["currency_summaries"]:
+            value = row["market_value"] if row["complete"] else "評価不能（価格欠落）"
+            print(f"{row['currency']}: 原価 {row['total_cost']} 評価額 {value} 実現損益 {row['realized_pnl']}")
+        if command == "status":
+            for row in data["positions"]:
+                print(f"{row['symbol']} {row['currency']} 数量 {row['quantity']} "
+                      f"未実現損益 {row['unrealized_pnl'] if row['unrealized_pnl'] is not None else '評価不能'} "
+                      f"({row['valuation_status']})")
+        for row in data["alerts"]:
+            label = "評価不能" if row["triggered"] is None else "到達" if row["triggered"] else "未到達"
+            print(f"{row['symbol']} {row['type']}: {label}")
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    machine = "--json" in argv
+    command = None
+    try:
+        args = parser().parse_args(argv)
+        command, machine = args.command, args.json
+        data = execute(args)
+        result = dict(schema_version=SCHEMA_VERSION, generated_at=stamp(now()), ok=True, command=command, data=data)
+    except (PortfolioError, OSError, sqlite3.Error) as exc:
+        code = str(exc) if isinstance(exc, PortfolioError) else "storage_error"
+        result = dict(schema_version=SCHEMA_VERSION, generated_at=stamp(now()), ok=False, command=command, error=dict(code=code))
+        if machine:
+            print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+        else:
+            print("Portfolioエラー: " + code, file=sys.stderr)
+        return 2
+    if machine:
+        print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+    else:
+        display(data, command)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
