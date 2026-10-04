@@ -34,6 +34,9 @@ def display_assessment(data):
                 label = {"earnings": "決算", "dividend": "配当", "stock_split": "株式分割"}[event["event_type"]]
                 timing = f"{event['days_until']}日後" if event["days_until"] >= 0 else f"{-event['days_until']}日前"
                 print(f"イベント: {label} {event['event_date']} ({timing}) / {event['status']} / 鮮度: {event['freshness_status']}")
+            for article in row.get("news", []):
+                published = article["published_at"] or "公開時刻不明"
+                print(f"ニュース: {published} {article['title']} / {article['source']} / 鮮度: {article['freshness_status']}")
         for group in data["portfolio"]["currencies"]:
             value = group["market_value"] if group["market_value"] is not None else "評価不可"
             print(f"\n{group['currency']}: 保有 {group['number_of_positions']}銘柄 / 評価額 {value} / 実現損益 {group['realized_pnl']}")

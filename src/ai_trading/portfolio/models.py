@@ -196,6 +196,7 @@ class RuleConfig:
     max_position_weight_pct: Optional[Decimal] = None
     max_snapshot_age_seconds: int = 86400
     events: Optional[object] = None
+    news: Optional[object] = None
 
     def __post_init__(self):
         for name in ("take_profit_pct", "loss_warning_pct", "daily_move_pct", "max_position_weight_pct"):
@@ -221,15 +222,21 @@ class RuleConfig:
             from .events import EventConfig
             value = self.events if isinstance(self.events, EventConfig) else EventConfig.from_dict(self.events)
             object.__setattr__(self, "events", value)
+        if self.news is not None:
+            from .news import NewsConfig
+            value = self.news if isinstance(self.news, NewsConfig) else NewsConfig.from_dict(self.news)
+            object.__setattr__(self, "news", value)
         if type(self.max_snapshot_age_seconds) is not int or not 1 <= self.max_snapshot_age_seconds <= 31536000:
             raise PortfolioError("invalid_snapshot_age")
 
     def to_dict(self):
-        # 未指定のeventsを省略し、既存DBのcanonical設定とhashを維持する。
+        # 未指定のevents/newsを省略し、既存DBのcanonical設定とhashを維持する。
         result = {f.name: (getattr(self, f.name) if f.name == "max_snapshot_age_seconds"
-                          else number(getattr(self, f.name))) for f in fields(self) if f.name != "events"}
+                          else number(getattr(self, f.name))) for f in fields(self) if f.name not in ("events", "news")}
         if self.events is not None:
             result["events"] = self.events.to_dict()
+        if self.news is not None:
+            result["news"] = self.news.to_dict()
         return result
 
     @classmethod

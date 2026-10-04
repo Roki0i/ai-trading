@@ -47,6 +47,7 @@ def parser():
             cmd.add_argument("--max-price-age-seconds", type=int)
         if name == "assess":
             cmd.add_argument("--events-fixture", type=Path)
+            cmd.add_argument("--news-fixture", type=Path)
         if name == "config":
             cmd.add_argument("--file", type=Path, help="省略時は現在設定を表示。指定時は全設定を置換")
     return root
@@ -98,7 +99,12 @@ def execute(args):
         event_provider = JsonEventProvider.from_file(args.events_fixture) if args.events_fixture else JsonEventProvider()
         events = [event for symbol in sorted({r["symbol"] for r in report["positions"] if r["quantity"] != "0"})
                   for event in event_provider.events(symbol)]
-        return enrich_assessment(assess(report, generated_at=generated, blocked=blocked), events, config.events)
+        assessment = enrich_assessment(assess(report, generated_at=generated, blocked=blocked), events, config.events)
+        from .news import JsonNewsProvider, enrich_news
+        news_provider = JsonNewsProvider.from_file(args.news_fixture) if args.news_fixture else JsonNewsProvider()
+        articles = [article for symbol in sorted({r["symbol"] for r in assessment["assessments"]})
+                    for article in news_provider.articles(symbol)]
+        return enrich_news(assessment, articles, config.news)
     # 取得後に評価時刻を確定し、取得時刻を過去へ繰り上げない。
     report = status(transactions, provider, config, args.as_of or now())
     report["alerts"] = alerts(report, config)["alerts"]

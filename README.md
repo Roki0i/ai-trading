@@ -152,3 +152,13 @@ PYTHONUTF8=1 PYTHONPATH=src python3 -m ai_trading.portfolio assess --market-prov
 liveには手動設定した`JQUANTS_API_KEY`が必要です。credentialなしでも通常test・明示fixtureは動作します。Corporate Eventsの実API対応は契約・データ仕様確認待ちで、既存fixtureを維持します。
 
 [実データ経路・provenance・失敗方針・少数smoke手順・イベント調査](docs/real-data-validation.md)
+
+## Phase 12 MVP: News Integration
+
+明示symbol付きの架空ニュースfixtureをAssessmentへ追加します。公開時刻・source・URL・短いProvider要約、鮮度、件数に基づくnews flagsと構造化根拠を返します。stale/unknownをflagへ使わず、記事数を制限します。実News API・scraping・LLM sentiment・売買推奨・Raphael連携はありません。
+
+```sh
+PYTHONUTF8=1 PYTHONPATH=src python3 -m ai_trading.portfolio assess --news-fixture tests/fixtures/portfolio_news.json --as-of 2025-01-08T09:00:00Z --json
+```
+
+[News契約・URL検証・設定・CLI・保存方針・制約](docs/news-integration.md)

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "articles": [
+    {
+      "id": "jp-fresh",
+      "symbol": "7203",
+      "title": "架空企業の研究施設に関するテスト記事",
+      "published_at": "2025-01-08T08:00:00Z",
+      "source": "fixture",
+      "url": "https://example.com/news/jp-fresh",
+      "summary": "架空データです。実際のニュースではありません。",
+      "language": "ja",
+      "metadata": {}
+    },
+    {
+      "id": "jp-fresh-2",
+      "symbol": "7203",
+      "title": "架空企業の展示会に関するテスト記事",
+      "published_at": "2025-01-07T08:00:00Z",
+      "source": "fixture",
+      "url": "https://example.com/news/jp-fresh-2",
+      "summary": "架空データです。実際のニュースではありません。",
+      "language": "ja",
+      "metadata": {}
+    },
+    {
+      "id": "jp-stale",
+      "symbol": "7203",
+      "title": "過去の架空ニュース",
+      "published_at": "2024-12-01T00:00:00Z",
+      "source": "fixture",
+      "url": "https://example.com/news/jp-stale",
+      "summary": "架空データです。実際のニュースではありません。",
+      "language": "ja",
+      "metadata": {}
+    },
+    {
+      "id": "jp-unknown",
+      "symbol": "7203",
+      "title": "公開時刻不明の架空ニュース",
+      "published_at": null,
+      "source": "fixture",
+      "url": "https://example.com/news/jp-unknown",
+      "summary": "架空データです。実際のニュースではありません。",
+      "language": "ja",
+      "metadata": {}
+    },
+    {
+      "id": "us-fresh",
+      "symbol": "NVDA",
+      "title": "Synthetic company announcement for testing",
+      "published_at": "2025-01-08T07:00:00Z",
+      "source": "fixture",
+      "url": "https://example.com/news/us-fresh",
+      "summary": "架空データです。実際のニュースではありません。",
+      "language": "en",
+      "metadata": {}
+    }
+  ]
+}
