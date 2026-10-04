@@ -140,3 +140,15 @@ PYTHONUTF8=1 PYTHONPATH=src python3 -m ai_trading.portfolio assess --events-fixt
 ```
 
 [イベント契約・設定・fixture・鮮度・CLI・制約](docs/corporate-events.md)
+
+## Phase 11: Real Data Validation
+
+既存J-Quants経路のHTTP失敗を固定codeで区別し、TransportからAssessmentまでmock HTTPで検証します。401/403/429・timeout・network failureでは再試行やfixture fallbackをしません。実行環境にcredentialがなかったため実API smokeは未実施です。
+
+```sh
+PYTHONUTF8=1 PYTHONPATH=src python3 -m ai_trading.portfolio assess --market-provider jquants --json
+```
+
+liveには手動設定した`JQUANTS_API_KEY`が必要です。credentialなしでも通常test・明示fixtureは動作します。Corporate Eventsの実API対応は契約・データ仕様確認待ちで、既存fixtureを維持します。
+
+[実データ経路・provenance・失敗方針・少数smoke手順・イベント調査](docs/real-data-validation.md)

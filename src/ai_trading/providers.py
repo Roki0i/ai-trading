@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from http.client import HTTPException
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -37,6 +38,16 @@ class FixtureTransport:
         raise ValueError("fixture has no matching request")
 
 
+class JQuantsError(RuntimeError):
+    """本文やheaderを保持せず、呼出し側へ失敗種別だけを渡す。"""
+    def __init__(self, kind, http_status=None):
+        self.kind = kind
+        self.http_status = http_status
+        message = ("J-Quants HTTP status " + str(http_status) if kind == "http"
+                   else "J-Quants network request failed")
+        super().__init__(message)
+
+
 class JQuantsTransport:
     BASE = "https://api.jquants.com/v2"
 
@@ -56,10 +67,17 @@ class JQuantsTransport:
             with urlopen(request, timeout=30) as result:
                 body = result.read()
         except HTTPError as exc:
-            # Do not echo headers, response bodies or credentials into logs.
-            raise RuntimeError("J-Quants HTTP status " + str(exc.code)) from None
-        except (URLError, TimeoutError):
-            raise RuntimeError("J-Quants network request failed") from None
+            # エラー応答も閉じる。本文・header・認証情報を例外へ転記しない。
+            status = exc.code
+            exc.close()
+            raise JQuantsError("http", status) from None
+        except TimeoutError:
+            raise JQuantsError("timeout") from None
+        except URLError as exc:
+            kind = "timeout" if isinstance(exc.reason, TimeoutError) else "network"
+            raise JQuantsError(kind) from None
+        except (OSError, HTTPException):
+            raise JQuantsError("network") from None
         if self._api_key.encode() in body:
             raise RuntimeError('J-Quants response rejected: credential reflection')
         return Response(body, datetime.now(timezone.utc))

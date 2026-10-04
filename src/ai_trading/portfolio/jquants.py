@@ -5,7 +5,7 @@ import re
 from datetime import date, timedelta, timezone
 from decimal import Decimal
 
-from ..providers import (JQuantsTransport, FixtureTransport, validate_daily_row,
+from ..providers import (JQuantsTransport, JQuantsError, FixtureTransport, validate_daily_row,
                          calendar_from_raw, normalize_daily)
 from ..quality import inspect_daily
 from ..validation import coverage
@@ -50,6 +50,14 @@ class JQuantsSnapshotProvider:
         for _ in range(MAX_PAGES):
             try:
                 response = self.transport.get(endpoint, query)
+            except JQuantsError as exc:
+                # 固定codeだけを公開し、429を含む全失敗で再試行せず停止する。
+                if exc.kind == "http":
+                    code = {401: "market_auth_failed", 403: "market_forbidden",
+                            429: "market_rate_limited"}.get(exc.http_status, "market_http_error")
+                else:
+                    code = "market_timeout" if exc.kind == "timeout" else "market_network_error"
+                raise PortfolioError(code) from None
             except Exception:
                 # Provider例外に含まれるbody/header/credentialを外部へ反射しない。
                 raise PortfolioError("market_provider_error") from None
