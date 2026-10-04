@@ -130,3 +130,13 @@ PYTHONUTF8=1 PYTHONPATH=src python3 -m ai_trading.portfolio assess --json
 既定は通信しないmanualで、snapshotなしでは価格をmissingと表示します。Phase 8の明示fixture/live選択と`--snapshot`を利用できます。既存DBやstatus/alerts JSONは変更しません。
 
 [Assessmentモデル・severity・CLI・JSON契約・制約](docs/portfolio-decision-support.md)
+
+## Phase 10 MVP: Earnings / Corporate Events
+
+決算・配当・株式分割の予定を、明示したローカルfixtureからAssessmentへ追加します。予定日までの日数、鮮度、設定閾値によるevent flagsと構造化根拠を返します。stale/unknownのflagは抑止し、売買判断や数量補正は行いません。新規外部API・News・Raphaelには未接続です。
+
+```sh
+PYTHONUTF8=1 PYTHONPATH=src python3 -m ai_trading.portfolio assess --events-fixture tests/fixtures/portfolio_events.json --as-of 2025-01-08T09:00:00Z --json
+```
+
+[イベント契約・設定・fixture・鮮度・CLI・制約](docs/corporate-events.md)

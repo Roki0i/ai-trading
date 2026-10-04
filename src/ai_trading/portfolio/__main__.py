@@ -45,6 +45,8 @@ def parser():
             cmd.add_argument("--market-fixture", type=Path)
             cmd.add_argument("--market-lookback-days", type=int)
             cmd.add_argument("--max-price-age-seconds", type=int)
+        if name == "assess":
+            cmd.add_argument("--events-fixture", type=Path)
         if name == "config":
             cmd.add_argument("--file", type=Path, help="省略時は現在設定を表示。指定時は全設定を置換")
     return root
@@ -92,7 +94,11 @@ def execute(args):
         provider, blocked = collect_snapshots(replay(transactions), provider)
         generated = now()
         report = status(transactions, provider, config, args.as_of or generated)
-        return assess(report, generated_at=generated, blocked=blocked)
+        from .events import JsonEventProvider, enrich_assessment
+        event_provider = JsonEventProvider.from_file(args.events_fixture) if args.events_fixture else JsonEventProvider()
+        events = [event for symbol in sorted({r["symbol"] for r in report["positions"] if r["quantity"] != "0"})
+                  for event in event_provider.events(symbol)]
+        return enrich_assessment(assess(report, generated_at=generated, blocked=blocked), events, config.events)
     # 取得後に評価時刻を確定し、取得時刻を過去へ繰り上げない。
     report = status(transactions, provider, config, args.as_of or now())
     report["alerts"] = alerts(report, config)["alerts"]

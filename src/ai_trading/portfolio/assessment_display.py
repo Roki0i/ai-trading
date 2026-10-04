@@ -30,6 +30,10 @@ def display_assessment(data):
                 print(f"日足終値（リアルタイムではありません）: {metadata['data_date']}")
             if metadata["source"]:
                 print(f"価格時点: {metadata['as_of']} / 出所: {metadata['source']}")
+            for event in row.get("events", []):
+                label = {"earnings": "決算", "dividend": "配当", "stock_split": "株式分割"}[event["event_type"]]
+                timing = f"{event['days_until']}日後" if event["days_until"] >= 0 else f"{-event['days_until']}日前"
+                print(f"イベント: {label} {event['event_date']} ({timing}) / {event['status']} / 鮮度: {event['freshness_status']}")
         for group in data["portfolio"]["currencies"]:
             value = group["market_value"] if group["market_value"] is not None else "評価不可"
             print(f"\n{group['currency']}: 保有 {group['number_of_positions']}銘柄 / 評価額 {value} / 実現損益 {group['realized_pnl']}")

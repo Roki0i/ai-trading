@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "events": [
+    {
+      "symbol": "7203",
+      "event_type": "earnings",
+      "event_date": "2025-01-15",
+      "announced_at": "2025-01-07T00:00:00Z",
+      "source": "fixture",
+      "status": "scheduled",
+      "metadata": {}
+    },
+    {
+      "symbol": "7203",
+      "event_type": "dividend",
+      "event_date": "2025-01-10",
+      "announced_at": "2025-01-07T00:00:00Z",
+      "source": "fixture",
+      "status": "scheduled",
+      "metadata": {}
+    },
+    {
+      "symbol": "7203",
+      "event_type": "stock_split",
+      "event_date": "2025-01-22",
+      "announced_at": "2025-01-07T00:00:00Z",
+      "source": "fixture",
+      "status": "scheduled",
+      "metadata": {}
+    }
+  ]
+}
