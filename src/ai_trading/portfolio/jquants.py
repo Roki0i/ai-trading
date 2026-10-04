@@ -171,7 +171,7 @@ class JQuantsSnapshotProvider:
         return result
 
 
-def prepare_provider(positions, *, at, lookback_days=90, fixture_path=None):
+def prepare_provider(positions, *, at, lookback_days=90, fixture_path=None, prefetch=True):
     """全銘柄の通貨/codeを通信前に検証し、明示したlive/fixtureだけを選ぶ。"""
     held = [p for p in positions if p.quantity]
     if len(held) > 100:
@@ -192,6 +192,8 @@ def prepare_provider(positions, *, at, lookback_days=90, fixture_path=None):
             raise PortfolioError("market_fixture_invalid") from None
     provider = JQuantsSnapshotProvider(transport, end_date=instant(at).astimezone(JST).date().isoformat(),
                                        lookback_days=lookback_days, fixture=fixture_path is not None)
-    for position in held:
-        provider.snapshot(position.symbol, position.currency)
+    # assessは取得境界で停止理由を収集する。既存呼出しは従来どおり先に取得する。
+    if prefetch:
+        for position in held:
+            provider.snapshot(position.symbol, position.currency)
     return provider

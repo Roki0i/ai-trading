@@ -26,7 +26,7 @@ def parser():
     root.add_argument("--db", type=Path, default=Path("data/user-portfolio/portfolio.sqlite3"))
     root.add_argument("--json", action="store_true")
     sub = root.add_subparsers(dest="command", required=True, parser_class=Parser)
-    for name in ("init", "add", "transactions", "status", "alerts", "config"):
+    for name in ("init", "add", "transactions", "status", "alerts", "config", "assess"):
         cmd = sub.add_parser(name)
         # 共通引数はサブコマンド前後のどちらにも置ける。
         cmd.add_argument("--db", type=Path, default=argparse.SUPPRESS)
@@ -38,7 +38,7 @@ def parser():
             cmd.add_argument("--fee", default="0")
             cmd.add_argument("--note", default="")
             cmd.add_argument("--asset-type", default="equity")
-        if name in ("status", "alerts"):
+        if name in ("status", "alerts", "assess"):
             cmd.add_argument("--snapshot", type=Path)
             cmd.add_argument("--as-of")
             cmd.add_argument("--market-provider", choices=("manual", "jquants", "jquants-fixture"), default="manual")
@@ -85,7 +85,14 @@ def execute(args):
         from .jquants import prepare_provider
         provider = prepare_provider(replay(transactions), at=args.as_of or now(),
             lookback_days=args.market_lookback_days if args.market_lookback_days is not None else 90,
-            fixture_path=args.market_fixture)
+            fixture_path=args.market_fixture, prefetch=args.command != "assess")
+    if args.command == "assess":
+        from .assessment import assess
+        from .assessment_market import collect_snapshots
+        provider, blocked = collect_snapshots(replay(transactions), provider)
+        generated = now()
+        report = status(transactions, provider, config, args.as_of or generated)
+        return assess(report, generated_at=generated, blocked=blocked)
     # 取得後に評価時刻を確定し、取得時刻を過去へ繰り上げない。
     report = status(transactions, provider, config, args.as_of or now())
     report["alerts"] = alerts(report, config)["alerts"]
@@ -94,7 +101,10 @@ def execute(args):
 
 def display(data, command):
     """人間向けの表示。機械向けclientは必ず--jsonを指定する。"""
-    if command == "init":
+    if command == "assess":
+        from .assessment_display import display_assessment
+        display_assessment(data)
+    elif command == "init":
         print("Portfolio DBを作成しました。")
     elif command == "add":
         row = data["transaction"]
@@ -137,7 +147,8 @@ def main(argv=None):
         args = parser().parse_args(argv)
         command, machine = args.command, args.json
         data = execute(args)
-        result = dict(schema_version=SCHEMA_VERSION, generated_at=stamp(now()), ok=True, command=command, data=data)
+        result = (dict(data, ok=True, command=command) if command == "assess" else
+                  dict(schema_version=SCHEMA_VERSION, generated_at=stamp(now()), ok=True, command=command, data=data))
     except (PortfolioError, OSError, sqlite3.Error) as exc:
         code = str(exc) if isinstance(exc, PortfolioError) else "storage_error"
         result = dict(schema_version=SCHEMA_VERSION, generated_at=stamp(now()), ok=False, command=command, error=dict(code=code))

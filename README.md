@@ -117,3 +117,16 @@ PYTHONUTF8=1 PYTHONPATH=src python3 -m ai_trading.portfolio alerts --market-prov
 liveはユーザーが環境へ設定した`JQUANTS_API_KEY`が必要です。未設定時はエラーで停止し、fixtureへ自動fallbackしません。既定のmanualは通信せず、credential不要の`jquants-fixture`も明示選択できます。実API疎通は未検証です。
 
 [fixture起動手順・adapter・JSON互換性・stale/企業行動の方針・制約](docs/market-data-integration.md)
+
+## Phase 9: Portfolio Decision Support
+
+実保有Portfolio・MarketSnapshot・設定済みalertsから、条件到達を構造化Assessmentで返します。利益・損失・日次変動・集中の条件をすべて保持し、根拠となる値・閾値・比較演算・価格時点を返します。stale/missing/blockedは評価不能を明示し、通貨を合算しません。売買推奨、broker注文、自動売買、LLM判断、Raphael接続はありません。
+
+```sh
+PYTHONUTF8=1 PYTHONPATH=src python3 -m ai_trading.portfolio assess
+PYTHONUTF8=1 PYTHONPATH=src python3 -m ai_trading.portfolio assess --json
+```
+
+既定は通信しないmanualで、snapshotなしでは価格をmissingと表示します。Phase 8の明示fixture/live選択と`--snapshot`を利用できます。既存DBやstatus/alerts JSONは変更しません。
+
+[Assessmentモデル・severity・CLI・JSON契約・制約](docs/portfolio-decision-support.md)
