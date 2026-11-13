@@ -83,9 +83,10 @@ class JQuantsTransport:
         return Response(body, datetime.now(timezone.utc))
 
 
-def acquire_daily(transport: Transport, date: str, raw_root: Path) -> tuple[list[dict], list[str]]:
+def acquire_daily(transport: Transport, date: str, raw_root: Path,
+                  code=None) -> tuple[list[dict], list[str]]:
     path = "/equities/bars/daily"
-    params = {"date": date}
+    params = {"date": date, **({"code": code} if code is not None else {})}
     pages, receipt_paths, seen = [], [], set()
     while True:
         response = transport.get(path, params)
@@ -100,7 +101,8 @@ def acquire_daily(transport: Transport, date: str, raw_root: Path) -> tuple[list
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
             raise ValueError("invalid J-Quants response: data array required")
         for item in payload["data"]:
-            if not isinstance(item, dict) or item.get("Date") != date:
+            if (not isinstance(item, dict) or item.get("Date") != date or
+                    (code is not None and item.get("Code") != code)):
                 raise ValueError("unexpected row or date in daily response")
         pages.append({"receipt": receipt, "rows": payload["data"]})
         cursor = payload.get("pagination_key")
@@ -111,7 +113,8 @@ def acquire_daily(transport: Transport, date: str, raw_root: Path) -> tuple[list
         seen.add(cursor)
         if len(pages) >= 1000:
             raise ValueError("pagination limit exceeded")
-        params = {"date": date, "pagination_key": cursor}
+        params = {"date": date, **({"code": code} if code is not None else {}),
+                  "pagination_key": cursor}
     return pages, receipt_paths
 
 
@@ -146,11 +149,11 @@ class MarketDataProvider:
     def __init__(self, transport, raw_root):
         self.transport, self.raw_root = transport, Path(raw_root)
 
-    def acquire(self, sessions):
+    def acquire(self, sessions, *, code=None):
         from .storage import read_verified
         receipts = []
         for session in sessions:
-            _, paths = acquire_daily(self.transport, session, self.raw_root)
+            _, paths = acquire_daily(self.transport, session, self.raw_root, code=code)
             for path in paths:
                 path = Path(path)
                 receipt = json.loads(read_verified(path))
@@ -256,3 +259,4 @@ def merge_daily_bundles(*bundles):
                 receipts.append(record)
                 seen.add(key)
     return dict(schema_version=1,provider='jquants_v2',receipts=receipts)
+
