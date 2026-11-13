@@ -25,6 +25,30 @@ python3 -m ai_trading.portfolio status
 
 台帳は `data/user-portfolio/portfolio.sqlite3` に保存されます。評価額の取得には別途価格データが必要です。J-Quants連携には `JQUANTS_API_KEY` が必要で、実API疎通は未検証です。
 
+## 少額資金のバックテスト（架空データ）
+
+`config/small-capital-demo.json` は元本20万円、1銘柄最大20%、初期資金の40%を現金として残す検証例です。
+`initial_cash` を `100000` / `200000` / `300000` に変更すると、同じ入力条件で資金規模を比較できます。
+
+```bash
+export PYTHONPATH=src
+python3 - <<'PY'
+import json
+from pathlib import Path
+from ai_trading.backtest import BacktestConfig, run_backtest
+from ai_trading.providers import normalize_daily
+pages = json.loads(Path("tests/fixtures/backtest_pages.json").read_text())
+cfg = BacktestConfig(**json.loads(Path("config/small-capital-demo.json").read_text()))
+result = run_backtest(normalize_daily(pages["pages"], source="fixture"), cfg)
+print(result["metrics"])
+print(result["snapshots"][-1])
+PY
+```
+
+100株単位で予算に収まる銘柄がなければ売買しません。`lot_size=1` は計算上の単元未満株を模擬するだけで、
+実際の証券会社の約定方式・スプレッドを保証しません。実市場データ・利益検証・実発注には接続していません。
+詳細は [バックテスト仕様](docs/backtest.md) を参照してください。
+
 ## テスト
 
 ```bash
