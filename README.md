@@ -51,6 +51,10 @@ PY
 
 ## テスト
 
+実市場の保存済み入力で少額資金の3戦略を比較する手順と、取得時刻・銘柄履歴・企業行動の
+必須条件は [実市場・少額資金の比較手順](docs/real-small-capital-validation.md) を参照してください。
+実データと独立参照がない状態では収益率を算出しません。
+
 ```bash
 python3 -m unittest discover -s tests -v
 ```
