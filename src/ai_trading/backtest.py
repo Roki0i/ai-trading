@@ -143,8 +143,11 @@ def run_backtest(rows, config):
             validate_market(config.market, config.sessions, config.universe)
         if config.ml is None:
             return _run(rows, config)
-        from .ml import MLConfig, walk_forward
+        from .ml import MLConfig
         cfg = MLConfig(**config.ml)
+        if config.strategy != 'ml':
+            return _run(rows, config, evaluation_start=cfg.first_prediction)
+        from .ml import walk_forward
         research = walk_forward(rows, config, cfg)
         signals = {}
         for p in research['predictions']:
