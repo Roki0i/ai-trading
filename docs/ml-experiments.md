@@ -35,7 +35,7 @@ fixtureコマンドは180営業日相当の平日・架空2銘柄を生成し、
 
 p>=0.5の適格銘柄を均等配分、該当なしなら現金。閾値の最適化はしない。予測は毎日生成するが執行は既存の週次判断、次セッション終値約定をそのまま使用。現金、売却先行、ロット、手数料、slippage、未約定処理も既存実装を通る。
 
-Buy & Hold / Equal Weight / Momentum / MLは同一入力hash、universe、cost、初期資金、評価開始・終了で比較する。Momentumは同じ助走期間の過去価格を使用可能。共通のML研究情報を各runに保存するが、非AI戦略は予測を注文に使用しない。投資指標は既存の累積収益率、CAGR、最大DD、年率volatility、Sharpe（無リスク0）、turnover（売買notional総額/平均equity）。
+Buy & Hold / Equal Weight / Momentum / MLは同一入力hash、universe、cost、初期資金、評価開始・終了で比較する。Momentumは同じ助走期間の過去価格を使用可能。非ML戦略は同じ`ml.first_prediction`から評価するが学習は実行せず、ML研究情報はML戦略のrunにのみ保存する。投資指標は既存の累積収益率、CAGR、最大DD、年率volatility、Sharpe（無リスク0）、turnover（売買notional総額/平均equity）。
 
 予測指標は全OOS銘柄日についてaccuracy、precision、recall、ROC-AUC（tie=0.5）、Brier、log loss、10固定binのcalibration、ECE。比較参照として固定p=0.5も保存。分母なしはnull。銘柄日をpoolし、ラベル期間も重複するため独立標本の有意差を主張できない。2銘柄のfixtureでICを主要指標として扱うのは適切でないため未実装。
 

@@ -10,7 +10,9 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from ai_trading.backtest import BacktestConfig
+from ai_trading.experiment import ExperimentStore
 from ai_trading.market_fixture import POLICY, fixture as market_fixture
+from ai_trading.ml import MLConfig
 from ai_trading.models import Observation, timestamp
 from ai_trading.providers import MarketDataProvider, calendar_from_raw
 from ai_trading.real_validation import compare, preflight
@@ -103,6 +105,14 @@ class RealValidationTests(unittest.TestCase):
             self.assertEqual(set(report["results"]), {"100000", "200000", "300000"})
             self.assertTrue(all(len(group) == 3 for group in report["results"].values()))
             self.assertEqual(report["label"], "exploratory_observed_PIT")
+            store = ExperimentStore(root)
+            expected_start = config.sessions[MLConfig(**config.ml).first_prediction]
+            for group in report["results"].values():
+                results = [store.read(item["experiment_id"])["outcome"]["result"] for item in group]
+                self.assertEqual({result["snapshots"][0]["session"] for result in results},
+                                 {expected_start})
+                self.assertTrue(all("ml_research" not in result for result in results[:2]))
+                self.assertIn("ml_research", results[2])
             self.assertEqual(len(list((Path(root) / "comparisons").glob("*.json"))), 1)
             self.assertFalse((Path(root) / "holdout").exists())
 
