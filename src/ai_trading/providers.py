@@ -259,4 +259,3 @@ def merge_daily_bundles(*bundles):
                 receipts.append(record)
                 seen.add(key)
     return dict(schema_version=1,provider='jquants_v2',receipts=receipts)
-
