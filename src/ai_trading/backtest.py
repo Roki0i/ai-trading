@@ -41,6 +41,8 @@ class BacktestConfig:
     market: Optional[dict] = None
     volume_participation: Optional[str] = None
     execution_statuses: tuple = ()
+    max_position_weight: str = "1"
+    min_cash_reserve_weight: str = "0"
 
     def __post_init__(self):
         object.__setattr__(self, "sessions", tuple(self.sessions))
@@ -71,6 +73,13 @@ class BacktestConfig:
             object.__setattr__(self, name, str(value))
         if decimal(self.slippage_bps) >= 10000 or decimal(self.commission_bps) >= 10000:
             raise ValueError("basis-point costs must be below 10000")
+        for name in ("max_position_weight", "min_cash_reserve_weight"):
+            weight = decimal(getattr(self, name))
+            if name == "max_position_weight" and not 0 < weight <= 1:
+                raise ValueError("max_position_weight must be in (0, 1]")
+            if name == "min_cash_reserve_weight" and not 0 <= weight < 1:
+                raise ValueError("min_cash_reserve_weight must be in [0, 1)")
+            object.__setattr__(self, name, str(weight))
         object.__setattr__(self, 'execution_statuses', tuple(self.execution_statuses))
         for item in self.execution_statuses:
             from .execution import delisting_policy
@@ -251,8 +260,35 @@ def _run(rows, config, signals=None, evaluation_start=0):
             price = reference * (1 + slip if side == "buy" else 1 - slip)
             quantity = order["quantity"]
             if side == "buy":
-                affordable = max(0, int((cash - fixed) / (price * (1 + rate) * config.lot_size))) * config.lot_size
+                # Reserve a fixed part of starting capital, not a percentage of
+                # fluctuating equity. Account for fees and slippage before buying.
+                cash_floor = decimal(config.initial_cash) * decimal(config.min_cash_reserve_weight)
+                affordable = max(0, int((cash - cash_floor - fixed) /
+                                         (price * (1 + rate) * config.lot_size))) * config.lot_size
                 quantity = min(quantity, affordable)
+                if quantity and decimal(config.max_position_weight) < 1:
+                    # A missing or halted held mark can overstate equity and
+                    # permit a buy above the true position cap.
+                    if any(s not in current or current[s]["close"] is None or
+                           current[s]["volume"] is None or current[s]["volume"] <= 0
+                           for s, q in positions.items() if q):
+                        order["last_no_fill"] = dict(session=session, reason="unreliable_held_mark")
+                        continue
+                    # Use the current session's reference closes for an end-of-day
+                    # simulated fill; no intraday execution is inferred.
+                    marked_equity = cash + sum(
+                        (decimal(current[s]["close"]) if s in current and
+                         current[s]["close"] is not None else marks[s][0]) * q
+                        for s, q in positions.items()
+                    ) + sum(r["amount"] for r in receivables)
+                    limit = decimal(config.max_position_weight)
+                    held_value = decimal(positions.get(symbol, 0)) * reference
+                    # Include the new fill's commission and slippage when
+                    # testing the post-fill position / post-fill equity ratio.
+                    headroom = limit * (marked_equity - fixed) - held_value
+                    per_share = reference + limit * ((price - reference) + price * rate)
+                    capped = max(0, int(headroom / (per_share * config.lot_size))) * config.lot_size
+                    quantity = min(quantity, capped)
             else:
                 quantity = min(quantity, positions.get(symbol, 0))
                 if price * quantity * (1 - rate) < fixed:
@@ -333,7 +369,9 @@ def _run(rows, config, signals=None, evaluation_start=0):
                               target_weights={s: str(w) for s, w in weights.items()},
                               histories={s: [str(p) for p in ps] for s, ps in histories.items()}))
         for symbol in sorted(set(weights) | set(positions)):
-            target = int(equity * weights[symbol] / marks[symbol][0] / config.lot_size) * config.lot_size if symbol in weights else 0
+            # Keep unused allocation in cash; do not redistribute it.
+            weight = min(weights[symbol], decimal(config.max_position_weight)) if symbol in weights else Decimal(0)
+            target = int(equity * weight / marks[symbol][0] / config.lot_size) * config.lot_size if weight else 0
             difference = target - positions.get(symbol, 0)
             if difference:
                 orders.append(dict(id=len(orders) + 1, decision_session=session,
