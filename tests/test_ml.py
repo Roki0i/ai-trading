@@ -169,6 +169,26 @@ class MLTests(unittest.TestCase):
             self.assertEqual(a['outcome']['result']['ml_research'],self.result)
             self.assertEqual(a['experiment']['strategy_parameters']['ml']['seed'],7)
 
+    def test_baselines_share_ml_start_without_training_or_ml_success(self):
+        with tempfile.TemporaryDirectory() as tmp, patch(
+                'ai_trading.ml.walk_forward', side_effect=ValueError('ML training failed')) as training:
+            initialize(tmp, self.study)
+            store = ExperimentStore(tmp)
+            baselines = [store.run(self.rows, replace(self.config, strategy=strategy), random_seed=7)
+                         for strategy in ('buy_and_hold', 'equal_weight', 'momentum')]
+            self.assertTrue(all(model.status == 'completed' for model in baselines))
+            self.assertEqual(training.call_count, 0)
+            first = self.config.sessions[self.cfg.first_prediction]
+            for model in baselines:
+                result = store.read(model.experiment_id)['outcome']['result']
+                self.assertEqual(result['snapshots'][0]['session'], first)
+                self.assertNotIn('ml_research', result)
+            self.assertEqual(len(store.compare([model.experiment_id for model in baselines])), 3)
+            ml_model = store.run(self.rows, replace(self.config, strategy='ml'), random_seed=7)
+            self.assertEqual(ml_model.status, 'failed')
+            self.assertIn('ML training failed', ml_model.failure_reason)
+            self.assertEqual(training.call_count, 1)
+
     def test_holdout_model_selection_forbidden_even_with_access_flag(self):
         with tempfile.TemporaryDirectory() as tmp:
             initialize(tmp,self.study);store=ExperimentStore(tmp)
