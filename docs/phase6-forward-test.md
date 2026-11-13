@@ -77,6 +77,51 @@ Equal Weightを選定した。これは架空developmentデータ上の選定で
 
 累積収益、同一universe/コスト/参加率/期間のBuy & Holdとの差、drawdown、volatility、Sharpe（risk-free=0）、turnover、cost、ML予測指標、block bootstrap CIを出力する。CIは平均日次収益と日次benchmark差。MLは既存の同日銘柄cluster付き予測CIを使う。短い期間ではCIの上下限をnullにし、`insufficient_forward_history` を明示する。60営業日以上でも記述統計であり、モデル選択の不確実性や多重比較を含む優位性の確定判定はしない。
 
+## 実データの日次収集（PR #3以後）
+
+`ai_trading.collection` は既存 `JQuantsTransport`、`acquire_reference`、
+`MarketDataProvider.acquire/regenerate`、content-addressed保存を組み合わせる。
+APIへの操作はGETのみ。`JQUANTS_API_KEY` がなければ通信前に停止し、
+fixtureへ自動切替しない。実APIの疎通は今回credential不在のため未検証。
+
+```powershell
+$env:PYTHONPATH = "src"
+$env:PYTHONUTF8 = "1"
+python -m ai_trading.collection --date YYYY-MM-DD --symbols 7203 6501 --calendar-from YYYY-MM-DD --calendar-to YYYY-MM-DD --raw-root data/forward-observed
+```
+
+銘柄コードは既存Portfolio変換を再利用し、4桁をJ-Quantsの5桁へ正規化する。
+calendar範囲は日付を含む連続期間を明示する。対象日が日本株の営業日でなければ停止。
+日足は対象日について全銘柄分をページング取得し、指定銘柄だけを品質・masterと照合する。
+calendar/master/dailyの応答本文・取得完了時刻・query・hashを既存のcreate-only原本へ保存し、
+`collections/<sha256>.json` に参照hash、欠損、取得時刻、購入可能性の要約を保存する。
+本文や認証headerは標準出力へ出さない。過去日の応答を今日取得した場合は
+`after_cutoff_exploratory` と記録し、過去のPIT観測へ繰り上げない。
+
+同一条件で完了済みの収集があれば、再実行時はhashを検証して通信せずに再利用する。
+欠損・取引不可の収集は `incomplete` として残り、次回の通信を妨げない。
+訂正の探索には `--refresh` を明示し、旧原本を保持したまま新しい時刻の原本を追加する。
+同一口座を使う別プロセス間のレート枠共有までは制御しない。
+
+Freeプラン相当の最大5要求/分を既定とし、連続要求の間に12.5秒以上を置く。
+HTTP 429、認証失敗、ネットワーク失敗は再試行せず停止する。
+契約ごとの枠と429後の待機については
+[公式レート制限](https://jpx-jquants.com/ja/spec/rate-limits)を確認する。
+日足は16:30頃、masterは17:30頃の更新予定だが、完了時刻は保証されず、
+完了通知APIもない。[公式更新時刻](https://jpx-jquants.com/ja/spec/data-update)
+収集時刻とデータの存在を確認して運用し、空の応答を正常な当日データと扱わない。
+
+`one_lot_preview` は空の現金口座から、各銘柄100株を1単位ずつ購入する場合の
+10万・20万・30万円別の算術上の最大銘柄数。既定はPR #2の20%銘柄上限、
+初期資金の40%現金確保、10bps手数料・5bpsスリッページ。
+欠損価格、出来高0、未確認の調整係数は候補から外す。引けでその株価で買える保証や
+投資推奨、収益予測ではない。`research_complete` と `forward_ready` はfalseのまま。
+
+この収集は独立した企業行動・銘柄ライフサイクル資料、売買単位変更履歴、
+PR #3のPIT照合、事前freeze、継続的な障害監視を代替しない。
+過去に取得した日足の探索的比較と、今後実際に蓄積する原本による
+append-only paper forward系列を区別する。
+
 ## 再現・運用手順
 
 ```sh
