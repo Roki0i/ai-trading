@@ -267,9 +267,15 @@ def _run(rows, config, signals=None, evaluation_start=0):
                                          (price * (1 + rate) * config.lot_size))) * config.lot_size
                 quantity = min(quantity, affordable)
                 if quantity and decimal(config.max_position_weight) < 1:
+                    # A missing or halted held mark can overstate equity and
+                    # permit a buy above the true position cap.
+                    if any(s not in current or current[s]["close"] is None or
+                           current[s]["volume"] is None or current[s]["volume"] <= 0
+                           for s, q in positions.items() if q):
+                        order["last_no_fill"] = dict(session=session, reason="unreliable_held_mark")
+                        continue
                     # Use the current session's reference closes for an end-of-day
-                    # simulated fill. Stale marks (legacy mode) remain explicit
-                    # in the snapshot; no intraday execution is inferred.
+                    # simulated fill; no intraday execution is inferred.
                     marked_equity = cash + sum(
                         (decimal(current[s]["close"]) if s in current and
                          current[s]["close"] is not None else marks[s][0]) * q

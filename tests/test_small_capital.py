@@ -48,6 +48,36 @@ class SmallCapitalTests(unittest.TestCase):
         exposure = Decimal("200") * first_fill["positions"]["fixture:A"]
         self.assertLessEqual(exposure / Decimal(first_fill["equity"]), Decimal("0.20"))
 
+    def test_missing_held_price_defers_new_buy_until_cap_can_be_checked(self):
+        # A's last mark is 100, but its next observed close is 1. Buying B
+        # against the stale mark would exceed the cap at the true price.
+        rows = [bar(day, "A", price=1 if day >= SESSIONS[7] else 100)
+                for day in SESSIONS if day != SESSIONS[6]]
+        rows += [bar(day, "B") for day in SESSIONS[5:]]
+        r = run_backtest(rows, config(
+            universe=("fixture:A", "fixture:B"), initial_cash="100000",
+            lot_size=100, max_position_weight="0.20",
+            min_cash_reserve_weight="0.40"))
+        b_fills = [f for f in r["fills"] if f["symbol"] == "fixture:B"]
+        self.assertEqual(b_fills[0]["session"], SESSIONS[7])
+        self.assertEqual(b_fills[0]["quantity"], 100)
+        self.assertIn("fixture:A", r["snapshots"][6]["stale_marks"])
+        self.assertLessEqual(Decimal("100") * b_fills[0]["quantity"] /
+                             Decimal(r["snapshots"][7]["equity"]), Decimal("0.20"))
+
+    def test_halted_held_symbol_defers_new_buy(self):
+        rows = [bar(day, "A", price=1 if day >= SESSIONS[7] else 100,
+                    volume=0 if day == SESSIONS[6] else 100000)
+                for day in SESSIONS]
+        rows += [bar(day, "B") for day in SESSIONS[5:]]
+        r = run_backtest(rows, config(
+            universe=("fixture:A", "fixture:B"), initial_cash="100000",
+            lot_size=100, max_position_weight="0.20"))
+        b_fills = [f for f in r["fills"] if f["symbol"] == "fixture:B"]
+        self.assertEqual(b_fills[0]["session"], SESSIONS[7])
+        self.assertLessEqual(Decimal("100") * b_fills[0]["quantity"] /
+                             Decimal(r["snapshots"][7]["equity"]), Decimal("0.20"))
+
     def test_unaffordable_standard_lot_stays_in_cash(self):
         rows = [bar(day, price=500) for day in SESSIONS]
         standard = run_backtest(rows, config(
