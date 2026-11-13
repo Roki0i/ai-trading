@@ -127,6 +127,16 @@ class RealValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "archived J-Quants"):
             preflight(rows, config, study, evidence)
 
+    def test_unvetted_free_sources_cannot_create_jquants_comparison(self):
+        for provider in ("yfinance", "stooq", "jpx_public"):
+            with self.subTest(provider=provider), tempfile.TemporaryDirectory() as root:
+                rows, config, study, evidence = inputs()
+                config.market["data_provider"] = provider
+                store = Path(root) / "store"
+                with self.assertRaisesRegex(ValueError, "archived J-Quants"):
+                    compare(rows, config, study, evidence, store)
+                self.assertFalse(store.exists())
+
     def test_master_observed_after_decision_rejected(self):
         rows, config, study, evidence = inputs()
         evidence["master_bundles"][0]["receipts"][0]["receipt"]["ingested_at"] = (
